@@ -11,6 +11,7 @@ import { formatMessageIdHeader, normalizeMessageId, parseMessageIdList } from "@
 import { createAuditLog } from "@/lib/mailboxes/audit";
 import { loadMessageAttachmentContents, storeMessageAttachments, validateAttachments } from "@/lib/email/attachments";
 import type { AttachmentContent } from "@/lib/email/attachment-types";
+import { isPostalConfigured, sendViaPostal } from "@/lib/email/postal";
 
 export type SendEmailInput = {
 	userId: string;
@@ -169,32 +170,44 @@ async function deliverEmail(env: CloudflareEnv, delivery: PreparedDelivery): Pro
 	const db = getDb(env);
 	const toAddr = joinEmailAddressList(to);
 	try {
-		const response = await env.EMAIL.send({
-			from,
-			to,
-			...(cc.length ? { cc } : {}),
-			...(bcc.length ? { bcc } : {}),
-			subject: input.subject,
-			headers: Object.keys(headers).length ? headers : undefined,
-			html: input.html,
-			text: input.text,
-			attachments: attachments.map((attachment) =>
-				attachment.disposition === "inline" && attachment.contentId
-					? {
-							filename: attachment.filename,
-							type: attachment.type,
-							content: attachment.content,
-							disposition: "inline" as const,
-							contentId: attachment.contentId,
-						}
-					: {
-							filename: attachment.filename,
-							type: attachment.type,
-							content: attachment.content,
-							disposition: "attachment" as const,
-						},
-			),
-		});
+		const response = isPostalConfigured(env)
+			? await sendViaPostal(env, {
+					from,
+					to,
+					cc,
+					bcc,
+					subject: input.subject,
+					html: input.html,
+					text: input.text,
+					headers,
+					attachments,
+				})
+			: await env.EMAIL.send({
+					from,
+					to,
+					...(cc.length ? { cc } : {}),
+					...(bcc.length ? { bcc } : {}),
+					subject: input.subject,
+					headers: Object.keys(headers).length ? headers : undefined,
+					html: input.html,
+					text: input.text,
+					attachments: attachments.map((attachment) =>
+						attachment.disposition === "inline" && attachment.contentId
+							? {
+									filename: attachment.filename,
+									type: attachment.type,
+									content: attachment.content,
+									disposition: "inline" as const,
+									contentId: attachment.contentId,
+								}
+							: {
+									filename: attachment.filename,
+									type: attachment.type,
+									content: attachment.content,
+									disposition: "attachment" as const,
+								},
+					),
+				});
 
 		// A fresh message starts its own conversation; Cloudflare's Message-ID is what
 		// any reply will name in In-Reply-To, so key the thread by it.

@@ -43,6 +43,7 @@ import {
   moveMessagesToCustomFolder,
   moveMessagesToSystemFolder,
 } from "./dashboard-nav-utils";
+import { SmartFolderNav } from "./smart-folder-nav";
 import { SidebarFooter } from "./sidebar-footer";
 import { SidebarHeader } from "./sidebar-header";
 import { useSidebar } from "./sidebar-state";
@@ -267,6 +268,11 @@ export function DashboardNav({ className }: { className?: string }) {
           }}
         />
       ))}
+      <SmartFolderNav
+        mailboxId={selectedMailbox?.id}
+        counts={counts.smartFolders}
+        minimal={minimal}
+      />
       <span className="flex-1" />
       <SidebarFooter />
     </nav>

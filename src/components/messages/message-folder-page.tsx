@@ -258,19 +258,26 @@ export function MessageFolderPage({
 		offset,
 		read: unreadOnly ? "unread" : "all",
 		group: grouped ? "thread" : undefined,
-	}, !mailboxesLoading, config.folderId);
+	}, !mailboxesLoading, config.folderId, config.smartFolderId);
 	const { counts } = useMessageCounts(selectedMailbox?.id, !mailboxesLoading);
 	usePageLoading(mailboxesLoading || isLoading);
 	const headerIcons = config.headerIcons ?? [];
 	const hasActiveFilters = !!query.trim();
-	const folderCount = config.folderId
-		? counts.customFolders[config.folderId]
-		: counts.folders[config.folder];
+	const folderCount = config.smartFolderId
+		? counts.smartFolders?.[config.smartFolderId]
+		: config.folderId
+			? counts.customFolders[config.folderId]
+			: counts.folders[config.folder];
 	const titleTotal = folderCount?.total ?? total;
 	const titleUnread = folderCount?.unread ?? 0;
 	const mailboxAddress = getMailboxAddress(selectedMailbox);
 	const currentAccountName = selectedMailbox?.displayName ?? selectedMailbox?.localPart;
 	const pageRange = getPageRange(offset, messages.length, total);
+	// Conversation view can't cheaply know its thread total, so the API reports
+	// `total = rows.length` (see /api/messages). A full page therefore means
+	// "more may exist" — gating the Next button on `total` would strand the user
+	// on the first page no matter how much mail they have.
+	const hasMore = grouped ? messages.length >= limit : offset + messages.length < total;
 	const selectedMessages = selection?.selectedMessages ?? internalSelectedMessages;
 	const setSelectedMessages =
 		selection?.setSelectedMessages ?? setInternalSelectedMessages;
@@ -289,7 +296,7 @@ export function MessageFolderPage({
 	useEffect(() => {
 		setOffset(0);
 		setSelectedMessages([]);
-	}, [query, selectedMailbox?.id, config.folder, config.folderId, unreadOnly, grouped]);
+	}, [query, selectedMailbox?.id, config.folder, config.folderId, config.smartFolderId, unreadOnly, grouped]);
 
 	useEffect(() => {
 		setSelectedMessages([]);
@@ -402,7 +409,7 @@ export function MessageFolderPage({
 				{(selectedIds.length === 0 || compact) && (
 					<div className="flex items-center gap-2 text-neutral-500">
 						<span className="text-xs text-neutral-500 whitespace-nowrap">
-							{pageRange.start} - {pageRange.end} of {pageRange.total}
+							{pageRange.start} - {pageRange.end} of {pageRange.total}{grouped && hasMore ? "+" : ""}
 						</span>
 						<Tooltip label="Previous page">
 							<Button
@@ -419,7 +426,7 @@ export function MessageFolderPage({
 							<Button
 								variant="ghost"
 								size="sm"
-								disabled={offset + messages.length >= total || isLoading}
+								disabled={!hasMore || isLoading}
 								onClick={() => setOffset(offset + limit)}
 								aria-label="Next page"
 							>

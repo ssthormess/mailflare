@@ -5,6 +5,7 @@ import { useIsFetching } from "@tanstack/react-query";
 import { useBranding } from "@/components/branding-provider";
 import { PageLoadingContext } from "@/components/page-loading";
 import { RouteLoadingBar } from "@/components/route-loading-bar";
+import { LoadingSpinner } from "@/components/loading-spinner";
 import type { LoadingTransitionProps } from "./loading-transition-types";
 
 const MINIMUM_LOADING_TIME = 600;
@@ -21,6 +22,7 @@ export function LoadingTransition({ children, ready }: LoadingTransitionProps) {
 	const [contentVisible, setContentVisible] = useState(!showInitialLoader);
 	const [initialLoadComplete, setInitialLoadComplete] = useState(!showInitialLoader);
 	const [iconUrl, setIconUrl] = useState(branding.iconUrl);
+	const [iconReady, setIconReady] = useState(false);
 	const [pageMounted, setPageMounted] = useState(false);
 	const [pendingLoads, setPendingLoads] = useState(0);
 	const [dataWaitExpired, setDataWaitExpired] = useState(false);
@@ -37,6 +39,7 @@ export function LoadingTransition({ children, ready }: LoadingTransitionProps) {
 
 	useEffect(() => {
 		setIconUrl(branding.iconUrl);
+		setIconReady(false);
 	}, [branding.iconUrl]);
 
 	useEffect(() => {
@@ -99,13 +102,18 @@ export function LoadingTransition({ children, ready }: LoadingTransitionProps) {
 						loaderVisible ? "opacity-100" : "pointer-events-none opacity-0"
 					}`}
 				>
-					<div className="flex w-64 flex-col items-center gap-6">
+				<div className="flex w-64 flex-col items-center gap-6">
+					{branding.brandingLoaded && (!branding.hasCustomIcon || iconReady) ? (
 						<img
 							src={iconUrl}
 							onError={() => setIconUrl("/icon-96.png")}
+							onLoad={() => setIconReady(true)}
 							alt={`${branding.appName} icon`}
 							className="h-20 w-20 rounded-2xl object-contain"
 						/>
+					) : (
+						<LoadingSpinner />
+					)}
 						<div className="w-full">
 							<div className="h-1.5 overflow-hidden rounded-full bg-blue-100">
 								<div

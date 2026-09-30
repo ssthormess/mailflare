@@ -30,4 +30,8 @@ interface CloudflareEnv {
 	CF_ACCOUNT_ID?: string;
 	/** Public origin of this install (https://mail.example.com) when it sits behind a proxy. */
 	APP_URL?: string;
+	/** Self-hosted Postal server base URL, e.g. https://postal.example.com. Enables Postal transport. */
+	POSTAL_API_URL?: string;
+	/** Postal server API key (X-Server-API-Key). Enables Postal transport. */
+	POSTAL_API_KEY?: string;
 }

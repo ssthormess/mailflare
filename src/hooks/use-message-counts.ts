@@ -14,6 +14,7 @@ const emptyCounts: MessageCounts = {
 		trash: { total: 0, unread: 0 },
 	},
 	customFolders: {},
+	smartFolders: {},
 	mailboxes: [],
 };
 

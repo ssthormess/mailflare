@@ -3,7 +3,6 @@
 	"name": "mailflare",
 	"main": "./worker.ts",
 	"compatibility_date": "2026-05-20",
-	"keep_vars": true,
 	"compatibility_flags": [
 		"nodejs_compat",
 		"global_fetch_strictly_public"
@@ -19,22 +18,6 @@
 		{
 			"binding": "WORKER_SELF_REFERENCE",
 			"service": "mailflare",
-		},
-	],
-	"durable_objects": {
-		"bindings": [
-			{
-				"name": "REALTIME",
-				"class_name": "RealtimeHub",
-			},
-		],
-	},
-	"migrations": [
-		{
-			"tag": "v1",
-			"new_sqlite_classes": [
-				"RealtimeHub",
-			],
 		},
 	],
 	"triggers": {
@@ -53,11 +36,17 @@
 	"observability": {
 		"enabled": true,
 	},
+	"routes": [
+		{
+			"pattern": "mail.phoebo.net",
+			"custom_domain": true,
+		},
+	],
 	"upload_source_maps": true,
 	"send_email": [
 		{
 			"name": "EMAIL",
-			"remote": false,
+			"remote": true,
 		},
 	],
 	"d1_databases": [

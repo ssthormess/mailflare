@@ -7,5 +7,6 @@ export type ImapImportRequest = {
 	password?: string;
 	folder?: string;
 	limit?: number;
+	beforeUid?: number;
 	destination?: string;
 };

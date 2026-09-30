@@ -24,31 +24,35 @@ export function getMessageQueryParams(
 	mailboxId?: string | null,
 	filters?: MessageFilterOptions,
 	folderId?: string | null,
+	smartFolderId?: string | null,
 ) {
 	const params = new URLSearchParams();
 
-	if (folder === "inbox") {
+	if (smartFolderId) {
+		params.set("smartFolderId", smartFolderId);
+		params.set("direction", "inbound");
+	} else if (folder === "inbox") {
 		params.set("direction", "inbound");
 		params.set("status", "received");
 	}
-	if (folder === "starred") params.set("starred", "true");
-	if (folder === "snoozed") params.set("snoozed", "true");
+	if (!smartFolderId && folder === "starred") params.set("starred", "true");
+	if (!smartFolderId && folder === "snoozed") params.set("snoozed", "true");
 
-	if (folder === "sent") {
+	if (!smartFolderId && folder === "sent") {
 		params.set("direction", "outbound");
 		params.set("status", "sent");
 	}
 
-	if (folder === "drafts") {
+	if (!smartFolderId && folder === "drafts") {
 		params.set("direction", "outbound");
 		params.set("status", "draft");
 	}
 
-	if (folder === "archived" || folder === "trash" || folder === "spam") {
+	if (!smartFolderId && (folder === "archived" || folder === "trash" || folder === "spam")) {
 		params.set("status", folder);
 	}
 
-	if (folderId) params.set("folderId", folderId);
+	if (!smartFolderId && folderId) params.set("folderId", folderId);
 	if (mailboxId) params.set("mailboxId", mailboxId);
 	const searchFilters = filters?.query ? parseMessageSearchQuery(filters.query) : null;
 	const parsedFilters = searchFilters

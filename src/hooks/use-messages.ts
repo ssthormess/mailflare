@@ -14,6 +14,7 @@ export function useMessages(
 	filters?: MessageFilterOptions,
 	enabled = true,
 	folderId?: string | null,
+	smartFolderId?: string | null,
 ) {
 	const [messages, setMessages] = useState<Message[]>([]);
 	const [isLoading, setIsLoading] = useState(true);
@@ -29,7 +30,7 @@ export function useMessages(
 		async function loadMessages(force = false, showLoading = false) {
 			if (showLoading) setIsLoading(true);
 			try {
-				const params = getMessageQueryParams(folder, mailboxId, filters, folderId);
+				const params = getMessageQueryParams(folder, mailboxId, filters, folderId, smartFolderId);
 				const data = await fetchMessageList(params, force);
 				if (!cancelled) {
 					setMessages(data.messages ?? []);
@@ -56,7 +57,7 @@ export function useMessages(
 			window.removeEventListener("mailflare:messages-changed", onMessagesChanged);
 			window.clearInterval(refreshInterval);
 		};
-	}, [enabled, filters?.group, filters?.limit, filters?.offset, filters?.query, filters?.read, filters?.title, folder, folderId, mailboxId]);
+	}, [enabled, filters?.group, filters?.limit, filters?.offset, filters?.query, filters?.read, filters?.title, folder, folderId, mailboxId, smartFolderId]);
 
 	return { messages, unreadCount, isLoading, total, limit, offset, updateMessages: setMessages };
 }

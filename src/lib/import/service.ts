@@ -10,7 +10,27 @@ import { getImportMessagePlacement } from "./destination";
 import type { ImportDestination } from "./destination-types";
 import type { ImportMailboxResult, ImportMessageInput } from "./types";
 
+let importInFlight = false;
+
 export async function importMessagesToMailbox(
+	env: CloudflareEnv,
+	input: {
+		userId: string;
+		mailboxId: string;
+		destination: ImportDestination;
+		messages: ImportMessageInput[];
+	},
+): Promise<ImportMailboxResult> {
+	if (importInFlight) throw new Error("Another import is already running");
+	importInFlight = true;
+	try {
+		return await runImport(env, input);
+	} finally {
+		importInFlight = false;
+	}
+}
+
+async function runImport(
 	env: CloudflareEnv,
 	input: {
 		userId: string;
@@ -38,6 +58,7 @@ export async function importMessagesToMailbox(
 			result.skipped += 1;
 			result.errors.push(`${message.filename}: ${error instanceof Error ? error.message : "Import failed"}`);
 		}
+		await new Promise<void>((resolve) => setImmediate(resolve));
 	}
 	return result;
 }

@@ -98,6 +98,7 @@ export type MailboxCount = {
 export type MessageCounts = {
 	folders: Record<MessageFolder, FolderCount>;
 	customFolders: Record<string, FolderCount>;
+	smartFolders: Record<string, FolderCount>;
 	mailboxes: MailboxCount[];
 };
 

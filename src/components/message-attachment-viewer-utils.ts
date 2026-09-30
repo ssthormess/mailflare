@@ -10,13 +10,22 @@ export function getAttachmentFileUrl(
 	return `/api/messages/${messageId}/attachments/${attachmentId}${suffix}`;
 }
 
+const DOCX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+export function isDocxAttachment(
+	attachment: Pick<MessageAttachment, "filename" | "type">,
+): boolean {
+	return attachment.type === DOCX_MIME_TYPE || attachment.filename.toLowerCase().endsWith(".docx");
+}
+
 export function getAttachmentPreviewKind(
-	attachment: Pick<MessageAttachment, "type">,
+	attachment: Pick<MessageAttachment, "filename" | "type">,
 ): AttachmentPreviewKind {
 	if (attachment.type === "application/pdf") return "pdf";
 	if (attachment.type.startsWith("audio/")) return "audio";
 	if (attachment.type.startsWith("video/")) return "video";
 	if (attachment.type.startsWith("image/") && attachment.type !== "image/svg+xml") return "image";
+	if (isDocxAttachment(attachment)) return "docx";
 	if (
 		attachment.type.startsWith("text/plain") ||
 		attachment.type === "application/json" ||

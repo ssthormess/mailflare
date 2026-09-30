@@ -24,7 +24,21 @@ async function getCloudflareSocketConnect(): Promise<CloudflareSocketConnect> {
 		) as { connect: CloudflareSocketConnect };
 		return sockets.connect;
 	} catch {
-		throw new Error("IMAP import requires the Cloudflare Workers socket runtime");
+		// Self-hosted (node) runtime: wrap a net/tls socket as a CF-style Socket.
+		const tls = await import("node:tls");
+		const net = await import("node:net");
+		const { Readable, Writable } = await import("node:stream");
+		return (address, options) => {
+			const raw = options.secureTransport === "on"
+				? tls.connect({ host: address.hostname, port: address.port, servername: address.hostname })
+				: net.connect({ host: address.hostname, port: address.port });
+			return {
+				readable: Readable.toWeb(raw) as ReadableStream<Uint8Array>,
+				writable: Writable.toWeb(raw) as WritableStream<Uint8Array>,
+				close: () => raw.destroy(),
+				closed: Promise.resolve(),
+			} as unknown as Socket;
+		};
 	}
 }
 
@@ -34,6 +48,7 @@ class ImapConnection {
 	private decoder = new TextDecoder();
 	private encoder = new TextEncoder();
 	private buffer = new Uint8Array();
+	private scanIndex = 0;
 	private tagCounter = 0;
 
 	constructor(socket: Socket) {
@@ -103,12 +118,14 @@ class ImapConnection {
 
 	private async readLine(): Promise<string> {
 		while (true) {
-			const index = findCrlf(this.buffer);
+			const index = findCrlf(this.buffer, this.scanIndex);
 			if (index >= 0) {
 				const lineBytes = this.buffer.slice(0, index);
 				this.buffer = this.buffer.slice(index + 2);
+				this.scanIndex = 0;
 				return this.decoder.decode(lineBytes);
 			}
+			this.scanIndex = Math.max(0, this.buffer.byteLength - 1);
 			await this.readMore();
 		}
 	}
@@ -119,6 +136,7 @@ class ImapConnection {
 		}
 		const bytes = this.buffer.slice(0, length);
 		this.buffer = this.buffer.slice(length);
+		this.scanIndex = Math.min(this.scanIndex, this.buffer.byteLength);
 		return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
 	}
 
@@ -132,14 +150,16 @@ class ImapConnection {
 	}
 }
 
-function findCrlf(buffer: Uint8Array): number {
-	for (let index = 0; index < buffer.byteLength - 1; index += 1) {
+function findCrlf(buffer: Uint8Array, fromIndex = 0): number {
+	for (let index = fromIndex; index < buffer.byteLength - 1; index += 1) {
 		if (buffer[index] === 13 && buffer[index + 1] === 10) return index;
 	}
 	return -1;
 }
 
-export async function fetchImapMessages(input: ImapImportInput): Promise<ImportMessageInput[]> {
+export async function fetchImapMessages(
+	input: ImapImportInput,
+): Promise<{ messages: ImportMessageInput[]; nextBeforeUid?: number }> {
 	assertSafeImapHost(input.host);
 	const connect = await getCloudflareSocketConnect();
 	const socket = connect(
@@ -152,7 +172,12 @@ export async function fetchImapMessages(input: ImapImportInput): Promise<ImportM
 		await imap.command(`LOGIN ${quoteImapString(input.username)} ${quoteImapString(input.password)}`);
 		await imap.command(`SELECT ${quoteImapString(input.folder)}`);
 		const searchLines = await imap.command("UID SEARCH ALL");
-		const uids = searchLines.flatMap(parseSearchUids).slice(-input.limit);
+		const allUids = searchLines
+			.flatMap(parseSearchUids)
+			.map(Number)
+			.sort((a, b) => a - b);
+		const eligible = input.beforeUid ? allUids.filter((uid) => uid < input.beforeUid) : allUids;
+		const uids = eligible.slice(-input.limit);
 		const messages: ImportMessageInput[] = [];
 		for (const uid of uids) {
 			messages.push({
@@ -161,7 +186,7 @@ export async function fetchImapMessages(input: ImapImportInput): Promise<ImportM
 			});
 		}
 		await imap.command("LOGOUT").catch(() => undefined);
-		return messages;
+		return { messages, nextBeforeUid: uids.length ? uids[0] : undefined };
 	} finally {
 		await imap.close();
 	}

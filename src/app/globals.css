@@ -94,6 +94,106 @@ pre {
 	animation: route-loading-bar 1.1s ease-in-out infinite;
 }
 
+@property --arc-start {
+	syntax: "<angle>";
+	inherits: false;
+	initial-value: 0deg;
+}
+@property --arc-end {
+	syntax: "<angle>";
+	inherits: false;
+	initial-value: 0deg;
+}
+@property --progress-dash-animation {
+	syntax: "*";
+	inherits: false;
+	initial-value: , progress-dash 3s ease-in-out infinite;
+}
+
+progress.loading-spinner:indeterminate::-webkit-progress-bar {
+	display: none;
+	background: none;
+}
+progress.loading-spinner:indeterminate::-webkit-progress-value {
+	display: none;
+	background: none;
+}
+progress.loading-spinner:indeterminate::-moz-progress-bar {
+	display: none;
+	background: none;
+}
+progress.loading-spinner:indeterminate::slider-fill {
+	display: none;
+	background: none;
+}
+
+progress.loading-spinner:indeterminate {
+	--_from: calc(90deg + var(--arc-start, 0deg));
+	--_to: calc(90deg + var(--arc-end, 158deg));
+	--size: 48px;
+	--thickness: 3px;
+	--spinner-color: #2563eb;
+	--track-color: #dbeafe;
+	--spinner-duration: 1.5s;
+	--_used-spinner-duration: var(--spinner-duration);
+	--spinner-timing: linear;
+
+	position: relative;
+	display: block;
+	width: var(--size);
+	height: var(--size);
+	border-radius: 50%;
+	appearance: none;
+
+	background: conic-gradient(
+			from var(--_from),
+			var(--spinner-color) calc(var(--_to) - var(--_from)),
+			transparent 0
+		)
+		var(--track-color);
+
+	@supports (background-clip: border-area) {
+		background-clip: border-area;
+		border: var(--thickness) solid transparent;
+		background-origin: border-box;
+	}
+
+	@supports not (background-clip: border-area) {
+		--clip-boundary: calc(100% - var(--thickness));
+		mask-image: radial-gradient(
+			farthest-side,
+			transparent var(--clip-boundary),
+			black var(--clip-boundary)
+		);
+		border: 0;
+	}
+
+	animation:
+		progress-spin var(--_used-spinner-duration) linear infinite
+		var(--progress-dash-animation, );
+}
+
+@keyframes progress-spin {
+	to {
+		rotate: 1turn;
+	}
+}
+
+@keyframes progress-dash {
+	from {
+		--arc-start: 0deg;
+		--arc-end: 3deg;
+	}
+	50% {
+		--arc-start: 100deg;
+		--arc-end: 358deg;
+	}
+	to {
+		--arc-start: 360deg;
+		--arc-end: 363deg;
+	}
+}
+
 @media (prefers-reduced-motion: reduce) {
 	.dialog-overlay,
 	.dialog-content {
@@ -103,6 +203,10 @@ pre {
 	.route-loading-bar {
 		width: 100%;
 		animation: none;
+	}
+
+	progress.loading-spinner:indeterminate {
+		--_used-spinner-duration: 6s;
 	}
 }
 

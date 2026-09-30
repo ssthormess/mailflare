@@ -24,6 +24,7 @@ export async function getBranding(env: CloudflareEnv): Promise<Branding> {
 			appName: settings?.appName || DEFAULT_APP_NAME,
 			hasCustomIcon: !!settings?.iconKey,
 			canCustomizeBranding: true,
+			iconVersion: settings?.updatedAt ? String(settings.updatedAt.getTime()) : undefined,
 		};
 	} catch {
 		return { appName: DEFAULT_APP_NAME, hasCustomIcon: false, canCustomizeBranding: true };

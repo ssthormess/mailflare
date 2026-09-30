@@ -204,6 +204,12 @@ export const folderSchema = z.object({
 	color: z.enum(FOLDER_COLOR_VALUES).default(DEFAULT_FOLDER_COLOR),
 });
 
+export const smartFolderSchema = z.object({
+	mailboxId: z.string().min(1),
+	name: z.string().trim().min(1).max(80).optional(),
+	domain: z.string().trim().min(1).max(253),
+});
+
 export const updateProfileSchema = z.object({
 	name: z.string().trim().min(1).max(100),
 	resetEmail: z.preprocess(

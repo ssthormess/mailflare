@@ -29,7 +29,7 @@ function normalizeParam(value: unknown): unknown {
 
 class SqlitePreparedStatement {
 	constructor(
-		private readonly db: Database.Database,
+		private readonly db: Database.Database & { __statements?: Map<string, Database.Statement> },
 		private readonly sql: string,
 		private readonly params: unknown[] = [],
 	) {}
@@ -39,7 +39,14 @@ class SqlitePreparedStatement {
 	}
 
 	private statement() {
-		return this.db.prepare(this.sql);
+		const cache = (this.db as Database.Database & { __statements?: Map<string, Database.Statement> }).__statements
+			?? ((this.db as Database.Database & { __statements?: Map<string, Database.Statement> }).__statements = new Map());
+		let statement = cache.get(this.sql);
+		if (!statement) {
+			statement = this.db.prepare(this.sql);
+			cache.set(this.sql, statement);
+		}
+		return statement;
 	}
 
 	private isRead(): boolean {
@@ -84,14 +91,34 @@ export class SqliteDatabase {
 	readonly db: Database.Database;
 
 	constructor(filename: string) {
-		this.db = new Database(filename);
+		this.db = new Database(filename) as Database.Database & { __statements?: Map<string, Database.Statement> };
+		(this.db as Database.Database & { __statements?: Map<string, Database.Statement> }).__statements = new Map();
 		this.db.pragma("journal_mode = WAL");
+		this.db.pragma("synchronous = NORMAL");
 		this.db.pragma("foreign_keys = ON");
 		this.db.pragma("busy_timeout = 5000");
+		this.db.pragma("temp_store = MEMORY");
+		// The DB (13GB+) dwarfs host RAM, so reads must ride the kernel page
+		// cache: mmap the whole file and keep only a small in-process cache.
+		this.db.pragma("cache_size = -65536");
+		this.db.pragma("mmap_size = 17179869184");
+		this.db.pragma("wal_autocheckpoint = 1000");
+		// Conversation view groups on coalesce(thread_id, id). Without an index
+		// on that expression SQLite sorts the whole mailbox per request; this
+		// lets the group/order stream straight off the index.
+		this.db.exec(
+			"CREATE INDEX IF NOT EXISTS messages_thread_key_idx ON messages (mailbox_id, status, folder_id, coalesce(thread_id, id), created_at)",
+		);
+		this.db.exec(
+			"CREATE INDEX IF NOT EXISTS messages_inbox_page_idx ON messages (mailbox_id, status, folder_id, created_at DESC, id DESC)",
+		);
+		this.db.exec(
+			"CREATE INDEX IF NOT EXISTS messages_mailbox_thread_key_idx ON messages (mailbox_id, coalesce(thread_id, id))",
+		);
 	}
 
 	prepare(sql: string) {
-		return new SqlitePreparedStatement(this.db, sql);
+		return new SqlitePreparedStatement(this.db as Database.Database & { __statements?: Map<string, Database.Statement> }, sql);
 	}
 
 	/** Run statements atomically, like D1's batch. */

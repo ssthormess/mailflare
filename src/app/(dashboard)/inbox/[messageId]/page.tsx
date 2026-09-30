@@ -216,13 +216,17 @@ export default function MessageDetailPage() {
               </p>
               <p className="text-xs text-neutral-500">
                 to{" "}
-                {message.direction === "inbound" && toEntries.length <= 1 ? (
-                  toName
+                {message.direction === "inbound" ? (
+                  toEntries.length <= 1 ? (
+                    toName
+                  ) : (
+                    <RecipientList entries={toEntries} mailboxId={message.mailboxId} showAddress />
+                  )
                 ) : (
                   <RecipientList
                     entries={toEntries}
                     mailboxId={message.mailboxId}
-                    firstName={message.direction === "outbound" ? toName : undefined}
+                    firstName={toName}
                   />
                 )}
               </p>
@@ -352,11 +356,14 @@ function RecipientList({
   entries,
   mailboxId,
   firstName,
+  showAddress = false,
 }: {
   entries: string[];
   mailboxId: string | null;
   /** A contact name already resolved for the first entry, when the caller has one. */
   firstName?: string;
+  /** Show the mailbox address instead of a display name. */
+  showAddress?: boolean;
 }) {
   if (entries.length === 0) return <>—</>;
   return (
@@ -367,7 +374,13 @@ function RecipientList({
           <ContactDetailsTrigger
             mailboxId={mailboxId}
             address={entry}
-            name={index === 0 && firstName ? firstName : getEmailDisplayName(entry)}
+            name={
+              showAddress
+                ? getEmailAddress(entry)
+                : index === 0 && firstName
+                  ? firstName
+                  : getEmailDisplayName(entry)
+            }
           />
         </span>
       ))}

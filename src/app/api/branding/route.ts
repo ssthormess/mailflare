@@ -7,7 +7,7 @@ import { BRANDING_ICON_TYPES, isBrandingIcon, MAX_BRANDING_ICON_SIZE } from "./u
 
 export async function GET() {
 	return NextResponse.json(await getBranding(getEnv()), {
-		headers: { "Cache-Control": "no-store" },
+		headers: { "Cache-Control": "public, max-age=60, stale-while-revalidate=600" },
 	});
 }
 

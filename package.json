@@ -72,6 +72,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "dayjs": "^1.11.20",
+    "docx-preview": "^0.4.1",
     "drizzle-orm": "^0.45.2",
     "lucide-react": "^1.16.0",
     "mimetext": "^3.0.28",
@@ -111,5 +112,12 @@
     "@esbuild-kit/core-utils": {
       "esbuild": "^0.25.4"
     }
+  },
+  "allowScripts": {
+    "esbuild": true,
+    "workerd": true,
+    "better-sqlite3@13.0.3": true,
+    "unrs-resolver": true,
+    "core-js-pure": true
   }
 }

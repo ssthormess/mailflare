@@ -189,6 +189,28 @@ export const folders = sqliteTable(
 	],
 );
 
+export const smartFolders = sqliteTable(
+	"smart_folders",
+	{
+		id: text("id").primaryKey(),
+		userId: text("user_id")
+			.notNull()
+			.references(() => users.id, { onDelete: "cascade" }),
+		mailboxId: text("mailbox_id")
+			.notNull()
+			.references(() => mailboxes.id, { onDelete: "cascade" }),
+		name: text("name").notNull(),
+		domain: text("domain").notNull(),
+		createdAt: integer("created_at", { mode: "timestamp" })
+			.notNull()
+			.$defaultFn(() => new Date()),
+	},
+	(t) => [
+		uniqueIndex("smart_folders_mailbox_domain_idx").on(t.mailboxId, t.domain),
+		index("smart_folders_mailbox_idx").on(t.mailboxId),
+	],
+);
+
 export const apiKeys = sqliteTable("api_keys", {
 	id: text("id").primaryKey(),
 	userId: text("user_id")
@@ -623,6 +645,7 @@ export const schema = {
 	mailboxAccess,
 	contacts,
 	folders,
+	smartFolders,
 	apiKeys,
 	messages,
 	spamTokenStats,
