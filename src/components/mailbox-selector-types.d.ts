@@ -8,8 +8,13 @@ export type MailboxSelectorUser = {
 	hasAvatar: boolean;
 };
 
+export type MailboxSelectorProps = {
+	initialUser?: MailboxSelectorUser;
+};
+
 export type AccountAvatarProps = {
 	name: string;
+	colorSeed?: string;
 	hasAvatar?: boolean;
 	avatarUrl?: string;
 	size?: "small" | "large";

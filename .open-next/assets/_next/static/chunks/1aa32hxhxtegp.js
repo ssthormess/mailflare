@@ -1,0 +1,1 @@
+(globalThis.TURBOPACK||(globalThis.TURBOPACK=[])).push(["object"==typeof document?document.currentScript:void 0,84505,o=>{"use strict";var e=o.i(43476),i=o.i(95315),t=o.i(15416);o.s(["default",0,function({children:o}){return(0,e.jsx)(i.MessageSplitLayout,{config:t.snoozedFolderConfig,children:o})}])}]);

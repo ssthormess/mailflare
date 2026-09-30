@@ -1,9 +1,8 @@
 import { authFetch } from "@/lib/auth/client";
 import { parseSearchQuery } from "@/lib/search/query-utils";
+import { getUserTimeZone } from "@/lib/time/utils";
 import type { MessageFilterOptions, MessageFolder } from "./types";
 import type { MessageCounts, MessageListResponse } from "./types";
-
-export const MESSAGE_POLL_INTERVAL_MS = 15_000;
 
 /**
  * The search string goes to the server whole; operators are parsed there
@@ -27,6 +26,7 @@ export function getMessageQueryParams(
 	smartFolderId?: string | null,
 ) {
 	const params = new URLSearchParams();
+	params.set("timeZone", getUserTimeZone());
 
 	if (smartFolderId) {
 		params.set("smartFolderId", smartFolderId);
@@ -82,7 +82,9 @@ export function clearMessageCountsCache() {
 }
 
 export function clearMessageListCache() {
+	messageCacheGeneration += 1;
 	messageListCache.clear();
+	messageListRequests.clear();
 }
 
 export function clearMessageClientState() {

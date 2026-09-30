@@ -1,4 +1,5 @@
 import { sqliteTable, text, integer, index, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { sql } from "drizzle-orm";
 import type { AnySQLiteColumn } from "drizzle-orm/sqlite-core";
 
 export const users = sqliteTable("users", {
@@ -8,10 +9,18 @@ export const users = sqliteTable("users", {
 	forwardingEmail: text("forwarding_email"),
 	passwordHash: text("password_hash").notNull(),
 	name: text("name").notNull(),
+	bookingUsername: text("booking_username"),
+	timeZone: text("time_zone"),
 	avatarKey: text("avatar_key"),
 	role: text("role", { enum: ["admin", "user"] }).notNull().default("user"),
+	// Exactly one account is the primary admin: the one created during setup.
+	// They own administrator management and can hand the role to another account.
+	isPrimaryAdmin: integer("is_primary_admin", { mode: "boolean" }).notNull().default(false),
 	disabled: integer("disabled", { mode: "boolean" }).notNull().default(false),
 	canManageMailboxes: integer("can_manage_mailboxes", { mode: "boolean" }).notNull().default(false),
+	// Capabilities the primary admin grants to other admins.
+	canManageDomains: integer("can_manage_domains", { mode: "boolean" }).notNull().default(false),
+	canManageUsers: integer("can_manage_users", { mode: "boolean" }).notNull().default(false),
 	keyboardShortcutsEnabled: integer("keyboard_shortcuts_enabled", { mode: "boolean" }).notNull().default(true),
 	spamProtectionEnabled: integer("spam_protection_enabled", { mode: "boolean" }).notNull().default(true),
 	// TOTP second factor. The secret is written at enrolment and only counts
@@ -23,7 +32,7 @@ export const users = sqliteTable("users", {
 	createdAt: integer("created_at", { mode: "timestamp" })
 		.notNull()
 		.$defaultFn(() => new Date()),
-});
+}, (t) => [uniqueIndex("users_booking_username_idx").on(t.bookingUsername)]);
 
 export const domains = sqliteTable(
 	"domains",
@@ -76,7 +85,7 @@ export const mailboxes = sqliteTable(
 			.notNull()
 			.$defaultFn(() => new Date()),
 	},
-	(t) => [uniqueIndex("mailboxes_address_idx").on(t.domainId, t.localPart)],
+	(t) => [uniqueIndex("mailboxes_address_idx").on(t.domainId, t.localPart), index("mailboxes_user_idx").on(t.userId)],
 );
 
 export const mailboxAliases = sqliteTable(
@@ -211,8 +220,14 @@ export const smartFolders = sqliteTable(
 	],
 );
 
+export const jmapMailboxRevisions = sqliteTable("jmap_mailbox_revisions", {
+	mailboxId: text("mailbox_id").primaryKey(),
+	revision: integer("revision").notNull().default(0),
+});
+
 export const apiKeys = sqliteTable("api_keys", {
 	id: text("id").primaryKey(),
+	kind: text("kind", { enum: ["legacy", "mcp"] }).notNull().default("legacy"),
 	userId: text("user_id")
 		.notNull()
 		.references(() => users.id, { onDelete: "cascade" }),
@@ -220,6 +235,7 @@ export const apiKeys = sqliteTable("api_keys", {
 	prefix: text("prefix").notNull(),
 	keyHash: text("key_hash").notNull(),
 	scopes: text("scopes").notNull(),
+	mailboxScopeEnabled: integer("mailbox_scope_enabled", { mode: "boolean" }).notNull().default(false),
 	createdAt: integer("created_at", { mode: "timestamp" })
 		.notNull()
 		.$defaultFn(() => new Date()),
@@ -271,6 +287,21 @@ export const messages = sqliteTable(
 		index("messages_thread_idx").on(t.mailboxId, t.threadId),
 		index("messages_provider_message_idx").on(t.mailboxId, t.providerMessageId),
 		index("messages_raw_r2_key_idx").on(t.rawR2Key),
+		index("messages_inbox_page_idx").on(
+			t.mailboxId,
+			t.status,
+			t.folderId,
+			sql`${t.createdAt} desc`,
+			sql`${t.id} desc`,
+		),
+		index("messages_thread_key_idx").on(
+			t.mailboxId,
+			t.status,
+			t.folderId,
+			sql`coalesce(${t.threadId}, ${t.id})`,
+			t.createdAt,
+		),
+		index("messages_mailbox_thread_key_idx").on(t.mailboxId, sql`coalesce(${t.threadId}, ${t.id})`),
 	],
 );
 
@@ -345,6 +376,13 @@ export const messageAttachments = sqliteTable(
 	(t) => [index("message_attachments_message_idx").on(t.messageId)],
 );
 
+export const sharedAttachmentLinks = sqliteTable("shared_attachment_links", {
+	id: text("id").primaryKey(),
+	attachmentId: text("attachment_id").notNull().references(() => messageAttachments.id, { onDelete: "cascade" }).unique(),
+	expiresAt: integer("expires_at", { mode: "timestamp" }).notNull(),
+	createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+});
+
 export const outboundJobs = sqliteTable("outbound_jobs", {
 	id: text("id").primaryKey(),
 	userId: text("user_id")
@@ -387,12 +425,43 @@ export const calendarEvents = sqliteTable(
 		description: text("description").notNull().default(""),
 		location: text("location").notNull().default(""),
 		attendees: text("attendees").notNull().default("[]"),
+		color: text("color").notNull().default("blue"),
+		repeat: text("repeat", { enum: ["none", "daily", "weekly", "monthly", "weekdays"] }).notNull().default("none"),
+		repeatDays: text("repeat_days").notNull().default("[]"),
+		repeatAnchorDay: integer("repeat_anchor_day"),
+		repeatUntil: integer("repeat_until", { mode: "timestamp" }),
+		excludedOccurrences: text("excluded_occurrences").notNull().default("[]"),
+		timeZone: text("time_zone"),
 		startsAt: integer("starts_at", { mode: "timestamp" }).notNull(),
 		endsAt: integer("ends_at", { mode: "timestamp" }).notNull(),
 		createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 		updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 	},
 	(t) => [index("calendar_events_user_starts_idx").on(t.userId, t.startsAt)],
+);
+
+export const bookingEvents = sqliteTable(
+	"booking_events",
+	{
+		id: text("id").primaryKey(),
+		userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+		name: text("name").notNull(),
+		slug: text("slug").notNull().default(""),
+		description: text("description").notNull().default(""),
+		color: text("color").notNull().default("#2563eb"),
+		hostIds: text("host_ids").notNull().default("[]"),
+		durationMinutes: integer("duration_minutes").notNull(),
+		location: text("location").notNull().default(""),
+		weekdays: text("weekdays").notNull().default("[1,2,3,4,5]"),
+		startTime: text("start_time").notNull().default("09:00"),
+		endTime: text("end_time").notNull().default("17:00"),
+		timeRanges: text("time_ranges").notNull().default('[{"startTime":"09:00","endTime":"17:00"}]'),
+		timeZone: text("time_zone").notNull().default("UTC"),
+		enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+		createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+		updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+	},
+	(t) => [index("booking_events_user_idx").on(t.userId), uniqueIndex("booking_events_user_slug_idx").on(t.userId, t.slug)],
 );
 
 export const routingRules = sqliteTable(
@@ -573,13 +642,14 @@ export const auditLogs = sqliteTable(
 
 export const backupSettings = sqliteTable("backup_settings", {
 	id: text("id").primaryKey(),
-	enabled: integer("enabled", { mode: "boolean" }).notNull().default(false),
+	enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
 	scheduleType: text("schedule_type", { enum: ["daily", "weekly", "monthly"] })
 		.notNull()
 		.default("daily"),
 	scheduleValue: integer("schedule_value"),
 	retentionEnabled: integer("retention_enabled", { mode: "boolean" }).notNull().default(false),
 	retentionDays: integer("retention_days").notNull().default(30),
+	excludedTableGroups: text("excluded_table_groups").notNull().default("[]"),
 	updatedAt: integer("updated_at", { mode: "timestamp" })
 		.notNull()
 		.$defaultFn(() => new Date()),
@@ -588,7 +658,15 @@ export const backupSettings = sqliteTable("backup_settings", {
 export const appSettings = sqliteTable("app_settings", {
 	id: text("id").primaryKey(),
 	appName: text("app_name").notNull().default("Mailflare"),
+	outboundAttachmentMaxMb: integer("outbound_attachment_max_mb").notNull().default(25),
 	iconKey: text("icon_key"),
+	agentEnabled: integer("agent_enabled", { mode: "boolean" }).notNull().default(true),
+	agentProvider: text("agent_provider", { enum: ["cloudflare", "compatible"] }),
+	agentPreset: text("agent_preset", { enum: ["openai", "openrouter", "groq", "custom"] }),
+	agentBaseUrl: text("agent_base_url"),
+	agentApiKey: text("agent_api_key"),
+	agentModel: text("agent_model"),
+	agentModelRates: text("agent_model_rates"),
 	updatedAt: integer("updated_at", { mode: "timestamp" })
 		.notNull()
 		.$defaultFn(() => new Date()),
@@ -636,6 +714,94 @@ export const backups = sqliteTable(
 	],
 );
 
+export const mailboxAgentSettings = sqliteTable("mailbox_agent_settings", {
+	mailboxId: text("mailbox_id").primaryKey().references(() => mailboxes.id, { onDelete: "cascade" }),
+	enabled: integer("enabled", { mode: "boolean" }).notNull().default(false),
+	modelId: text("model_id"),
+	autoDraftEnabled: integer("auto_draft_enabled", { mode: "boolean" }).notNull().default(false),
+	reviewerUserId: text("reviewer_user_id").references(() => users.id, { onDelete: "set null" }),
+	instructions: text("instructions").notNull().default(""),
+	dailyLimit: integer("daily_limit").notNull().default(25),
+	updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+});
+
+export const aiUsage = sqliteTable("ai_usage", {
+	id: text("id").primaryKey(),
+	createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+	provider: text("provider").notNull(),
+	model: text("model").notNull(),
+	source: text("source").notNull(),
+	inputTokens: integer("input_tokens"),
+	outputTokens: integer("output_tokens"),
+	costUsdMicros: integer("cost_usd_micros"),
+}, (t) => [index("ai_usage_created_idx").on(t.createdAt)]);
+
+export const agentConversations = sqliteTable("agent_conversations", {
+	id: text("id").primaryKey(),
+	userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+	mailboxId: text("mailbox_id").notNull().references(() => mailboxes.id, { onDelete: "cascade" }),
+	title: text("title").notNull().default("New conversation"),
+	createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+	updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+}, (t) => [index("agent_conversations_owner_idx").on(t.userId, t.mailboxId, t.updatedAt)]);
+
+export const agentChatMessages = sqliteTable("agent_chat_messages", {
+	id: text("id").primaryKey(),
+	conversationId: text("conversation_id").notNull().references(() => agentConversations.id, { onDelete: "cascade" }),
+	role: text("role", { enum: ["user", "assistant", "tool"] }).notNull(),
+	content: text("content").notNull(),
+	toolName: text("tool_name"),
+	createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+}, (t) => [index("agent_chat_messages_conversation_idx").on(t.conversationId, t.createdAt)]);
+
+export const agentJobs = sqliteTable("agent_jobs", {
+	id: text("id").primaryKey(),
+	mailboxId: text("mailbox_id").notNull().references(() => mailboxes.id, { onDelete: "cascade" }),
+	sourceMessageId: text("source_message_id").notNull().references(() => messages.id, { onDelete: "cascade" }),
+	reviewerUserId: text("reviewer_user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+	status: text("status", { enum: ["pending", "running", "completed", "skipped", "failed"] }).notNull().default("pending"),
+	attempts: integer("attempts").notNull().default(0),
+	nextAttemptAt: integer("next_attempt_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+	leaseUntil: integer("lease_until", { mode: "timestamp" }),
+	draftId: text("draft_id").references(() => messages.id, { onDelete: "set null" }),
+	reason: text("reason"),
+	createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+}, (t) => [uniqueIndex("agent_jobs_source_idx").on(t.mailboxId, t.sourceMessageId), index("agent_jobs_due_idx").on(t.status, t.nextAttemptAt)]);
+
+export const agentDraftMetadata = sqliteTable("agent_draft_metadata", {
+	draftId: text("draft_id").primaryKey().references(() => messages.id, { onDelete: "cascade" }),
+	mailboxId: text("mailbox_id").notNull().references(() => mailboxes.id, { onDelete: "cascade" }),
+	origin: text("origin", { enum: ["chat", "auto", "mcp"] }).notNull(),
+	sourceMessageId: text("source_message_id").references(() => messages.id, { onDelete: "set null" }),
+	revision: integer("revision").notNull().default(1),
+	humanEditedAt: integer("human_edited_at", { mode: "timestamp" }),
+	scheduledAt: integer("scheduled_at", { mode: "timestamp" }),
+	createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+});
+
+export const agentSendApprovals = sqliteTable("agent_send_approvals", {
+	id: text("id").primaryKey(),
+	draftId: text("draft_id").notNull().references(() => messages.id, { onDelete: "cascade" }),
+	mailboxId: text("mailbox_id").notNull().references(() => mailboxes.id, { onDelete: "cascade" }),
+	userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+	requestKeyId: text("request_key_id").references(() => apiKeys.id, { onDelete: "set null" }),
+	revision: integer("revision").notNull(),
+	payloadHash: text("payload_hash").notNull(),
+	status: text("status", { enum: ["pending", "claimed", "sent", "unknown", "expired", "cancelled"] }).notNull().default("pending"),
+	claimedAt: integer("claimed_at", { mode: "timestamp" }),
+	messageId: text("message_id"),
+	expiresAt: integer("expires_at", { mode: "timestamp" }).notNull(),
+	createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+}, (t) => [
+	index("agent_send_approvals_user_idx").on(t.userId, t.status),
+	uniqueIndex("agent_send_approvals_delivery_idx").on(t.draftId).where(sql`status IN ('claimed', 'sent', 'unknown')`),
+]);
+
+export const mcpKeyMailboxes = sqliteTable("mcp_key_mailboxes", {
+	keyId: text("key_id").notNull().references(() => apiKeys.id, { onDelete: "cascade" }),
+	mailboxId: text("mailbox_id").notNull().references(() => mailboxes.id, { onDelete: "cascade" }),
+}, (t) => [uniqueIndex("mcp_key_mailbox_idx").on(t.keyId, t.mailboxId)]);
+
 export const schema = {
 	users,
 	domains,
@@ -652,9 +818,11 @@ export const schema = {
 	spamReputation,
 	spamFeedback,
 	messageAttachments,
+	sharedAttachmentLinks,
 	outboundJobs,
 	emailTemplates,
 	calendarEvents,
+	bookingEvents,
 	routingRules,
 	webhooks,
 	webhookDeliveries,
@@ -664,4 +832,12 @@ export const schema = {
 	backups,
 	appSettings,
 	licenseSettings,
+	mailboxAgentSettings,
+	aiUsage,
+	agentConversations,
+	agentChatMessages,
+	agentJobs,
+	agentDraftMetadata,
+	agentSendApprovals,
+	mcpKeyMailboxes,
 };

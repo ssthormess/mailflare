@@ -1,0 +1,1 @@
+(globalThis.TURBOPACK||(globalThis.TURBOPACK=[])).push(["object"==typeof document?document.currentScript:void 0,49228,i=>{"use strict";var o=i.i(43476),t=i.i(15416),e=i.i(95315);i.s(["default",0,function({children:i}){return(0,o.jsx)(e.MessageSplitLayout,{config:t.inboxFolderConfig,children:i})}])}]);

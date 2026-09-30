@@ -2,12 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ChangePasswordForm } from "./change-password-form";
-import { EmailClientsSettings } from "./email-clients-settings";
-import { MfaSettings } from "./mfa-settings";
 import { ForwardingEmailForm } from "./forwarding-email-form";
 import { MailboxSignatureForm } from "./mailbox-signature-form";
 import { ProfileForm } from "./profile-form";
+import { TimeZoneForm } from "./time-zone-form";
 import type { AccountSettingsResponse } from "./types";
 import { loadAccountSettings } from "./utils";
 
@@ -63,6 +61,8 @@ export function AccountSettings() {
 						email={user.email}
 					/>
 
+					<TimeZoneForm userId={user.id} initialTimeZone={user.timeZone} />
+
 					{user.canForwardEmail && (
 						<div className="space-y-4 rounded-lg bg-white p-6">
 							<div>
@@ -83,36 +83,6 @@ export function AccountSettings() {
 				</div>
 			</section>
 
-			<section className="space-y-4">
-				<div>
-					<h2 className="text-xl font-semibold text-neutral-900">Security</h2>
-					<p className="mt-1 text-sm text-neutral-500">Manage how you sign in to your account.</p>
-				</div>
-				<div className="space-y-4 rounded-3xl bg-white p-6">
-					<div>
-						<h3 className="text-lg font-semibold text-neutral-900">Change password</h3>
-						<p className="mt-1 text-sm text-neutral-500">Use at least 8 characters for your new password.</p>
-					</div>
-					<ChangePasswordForm />
-				</div>
-				<div className="space-y-4 rounded-3xl bg-white p-6">
-					<div>
-						<h3 className="text-lg font-semibold text-neutral-900">Two-factor authentication</h3>
-						<p className="mt-1 text-sm text-neutral-500">Require a code from an authenticator app when signing in.</p>
-					</div>
-					<MfaSettings />
-				</div>
-			</section>
-
-			<section className="space-y-4">
-				<div>
-					<h2 className="text-xl font-semibold text-neutral-900">Email apps</h2>
-					<p className="mt-1 text-sm text-neutral-500">Use your mail from a desktop or mobile app over JMAP.</p>
-				</div>
-				<div className="space-y-4 rounded-3xl bg-white p-6">
-					<EmailClientsSettings />
-				</div>
-			</section>
 		</div>
 	);
 }

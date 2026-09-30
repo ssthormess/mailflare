@@ -47,6 +47,14 @@ export type MessageSplitLayoutProps = {
 	config: MessageFolderConfig;
 };
 
+export type MessageListVisibility = {
+	visible: boolean;
+	toggle: () => void;
+	singleColumn: boolean;
+	backHref: string;
+	backLabel: string;
+};
+
 export type BulkMessageToolbarProps = {
 	selectedCount: number;
 	hasUnreadSelection: boolean;

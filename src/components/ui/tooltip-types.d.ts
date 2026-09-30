@@ -1,9 +1,10 @@
 import type { ReactNode } from "react";
 
 export type TooltipProps = {
-	label: string;
+	label: null | string;
 	children: ReactNode;
 	className?: string;
+	placement?: "auto" | "right";
 };
 
 export type TooltipPosition = {

@@ -1,0 +1,1 @@
+(globalThis.TURBOPACK||(globalThis.TURBOPACK=[])).push(["object"==typeof document?document.currentScript:void 0,85856,e=>{"use strict";var i=e.i(43476),o=e.i(15416),t=e.i(81981);e.s(["default",0,function(){return(0,i.jsx)(t.MessageFolderPage,{config:o.archivedFolderConfig})}])}]);

@@ -8,6 +8,7 @@ import { getMessageDragData } from "@/lib/messages/drag-utils";
 import { useSelectedMailbox } from "./mailbox-provider";
 import { useSidebar } from "./sidebar-state";
 import { useCompose } from "./compose/compose-context";
+import { Tooltip } from "./ui/tooltip";
 import {
   preloadMailboxPage,
   waitForNavigationProgress,
@@ -40,9 +41,9 @@ export function NavItem({ link }: { link: NavLink }) {
   if (!Icon) return null;
   const active = pathname === link.href || pathname.startsWith(`${link.href}/`);
   const classes = cn(
-    "flex h-9 items-center gap-3 rounded-r-full text-sm font-medium text-neutral-700 transition-colors hover:bg-blue-50",
+    "flex h-9 items-center gap-3 rounded-r-full text-sm font-medium text-neutral-700 transition-colors",
     minimal && "relative mx-auto w-10 justify-center rounded-full px-0",
-    active && "bg-blue-100 text-blue-900",
+    active ? "bg-blue-100 text-blue-900" : "hover:bg-stone-200/60",
     dragOver && "bg-blue-50 text-blue-900 ring-1 ring-blue-200",
     link.primary &&
       "mb-3 h-12 w-fit rounded-2xl bg-blue-100 px-5 text-blue-950 shadow-sm hover:bg-blue-200",
@@ -67,19 +68,19 @@ export function NavItem({ link }: { link: NavLink }) {
     : {};
 
   if (link.href === "/compose") {
-    return (
+    const composeButton = (
       <button
         type="button"
         onClick={openComposer}
         className={classes}
-        title={minimal ? link.label : undefined}
+        aria-label={minimal ? link.label : undefined}
         {...dropProps}
       >
         <Icon
-        size={21}
+        size={19}
           style={{ color: link.iconColor }}
         />
-        {!minimal && <span className="flex-1">{link.label}</span>}
+        {!minimal && <span className={cn("flex-1", typeof link.count === "number" && link.count > 0 && "font-semibold")}>{link.label}</span>}
         {!minimal && typeof link.count === "number" && link.count > 0 && (
           <span className="ml-auto mr-3 rounded-full px-2 py-0.5 text-sm font-semibold text-neutral-700">
             {link.count > 99 ? "99+" : link.count}
@@ -92,6 +93,7 @@ export function NavItem({ link }: { link: NavLink }) {
         )}
       </button>
     );
+    return minimal && link.label ? <Tooltip label={link.label} placement="right" className="mx-auto">{composeButton}</Tooltip> : composeButton;
   }
 
   async function navigate(event: MouseEvent<HTMLAnchorElement>) {
@@ -127,29 +129,20 @@ export function NavItem({ link }: { link: NavLink }) {
     }
   }
 
-  return (
-    <>
-      {navigationProgress !== null && (
-        <div className="fixed inset-x-0 top-0 z-[120] h-1 bg-blue-100">
-          <div
-            className="h-full bg-blue-600 transition-[width] duration-100 ease-out"
-            style={{ width: `${navigationProgress}%` }}
-          />
-        </div>
-      )}
+  const navLink = (
       <Link
         href={link.href}
         onClick={navigate}
-        title={minimal ? link.label : undefined}
+        aria-label={minimal ? link.label : undefined}
         className={cn(!minimal && "-ml-3 pl-6", classes)}
         {...dropProps}
       >
         <Icon
           // className={minimal ? "h-4 w-4" : "h-5 w-5"}
           style={{ color: link.iconColor }}
-          size={18}
+          size={16}
         />
-        {!minimal && <span className="flex-1">{link.label}</span>}
+        {!minimal && <span className={cn("flex-1", typeof link.count === "number" && link.count > 0 && "font-semibold")}>{link.label}</span>}
         {!minimal && typeof link.count === "number" && link.count > 0 && (
           <span className="ml-auto mr-3 rounded-full px-2 py-0.5 text-sm font-semibold text-neutral-700">
             {link.count > 99 ? "99+" : link.count}
@@ -161,6 +154,19 @@ export function NavItem({ link }: { link: NavLink }) {
           </span>
         )}
       </Link>
+  );
+
+  return (
+    <>
+      {navigationProgress !== null && (
+        <div className="fixed inset-x-0 top-0 z-[120] h-1 bg-blue-100">
+          <div
+            className="h-full bg-blue-600 transition-[width] duration-100 ease-out"
+            style={{ width: `${navigationProgress}%` }}
+          />
+        </div>
+      )}
+      {minimal && link.label ? <Tooltip label={link.label} placement="right" className="mx-auto">{navLink}</Tooltip> : navLink}
     </>
   );
 }

@@ -1,0 +1,1 @@
+(globalThis.TURBOPACK||(globalThis.TURBOPACK=[])).push(["object"==typeof document?document.currentScript:void 0,63674,i=>{"use strict";var t=i.i(43476),e=i.i(15416),o=i.i(95315);i.s(["default",0,function({children:i}){return(0,t.jsx)(o.MessageSplitLayout,{config:e.spamFolderConfig,children:i})}])}]);

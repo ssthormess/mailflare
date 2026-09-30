@@ -7,10 +7,10 @@ import { ChevronLeft, ChevronRight, ListFilter } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip } from "@/components/ui/tooltip";
-import { useCompose } from "@/components/compose/compose-context";
 import { useMailSearch } from "@/components/mail-search/mail-search-context";
 import { useSelectedMailbox } from "@/components/mailbox-provider";
 import { usePageLoading } from "@/components/page-loading";
+import { useIsMobile } from "@/components/sidebar-mobile-utils";
 import { useMessageCounts } from "@/hooks/use-message-counts";
 import { useMessages } from "@/hooks/use-messages";
 import type { BulkMessageAction } from "@/app/api/messages/bulk/types";
@@ -20,6 +20,7 @@ import { BulkMessageToolbar } from "./bulk-message-toolbar";
 import { MessageListRowActions } from "./message-list-row-actions";
 import { dispatchMessageCountsDelta, toggleMessageStar } from "./message-list-row-actions-utils";
 import { MessageNavigationProgress, useMessageNavigation } from "./message-navigation";
+import { rememberOpenedUnreadMessage } from "./message-detail-navigation-utils";
 import { useConversationView } from "./use-conversation-view";
 import type { MessageFolderPageProps, MessageListRowProps } from "./types";
 import {
@@ -49,7 +50,6 @@ function MessageListRow({
 	dragMessageIds,
 }: MessageListRowProps) {
 	const Icon = config.icon;
-	const { openDraftComposer } = useCompose();
 	const [read, setRead] = useState(message.read);
 	const [threadUnread, setThreadUnread] = useState(message.threadUnread);
 	const [starred, setStarred] = useState(message.starred);
@@ -66,6 +66,7 @@ function MessageListRow({
 
 	function onMessageNavigate(event: MouseEvent<HTMLAnchorElement>) {
 		if (!read && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) {
+			rememberOpenedUnreadMessage(message.id);
 			const previousThreadUnread = threadUnread;
 			setRead(true);
 			if (previousThreadUnread !== undefined) setThreadUnread(Math.max(0, previousThreadUnread - 1));
@@ -129,7 +130,7 @@ function MessageListRow({
 	}
 
 	const className =
-		`group relative grid min-h-12 w-full grid-cols-[24px_32px_minmax(160px,240px)_1fr_auto] items-center gap-3 px-6 text-left text-sm hover:z-10 hover:bg-[#f2f6fc] hover:shadow-sm ${active || selected ? "bg-blue-50" : ""
+		`group relative grid min-h-12 w-full grid-cols-[24px_32px_minmax(160px,260px)_1fr_auto] items-center gap-3 px-6 text-left text-sm hover:z-10 hover:bg-[#f2f6fc] hover:shadow-sm ${active || selected ? "bg-blue-50" : ""
 		} ${draggable ? "cursor-grab active:cursor-grabbing" : ""}`;
 	const content = (
 		<>
@@ -185,9 +186,9 @@ function MessageListRow({
 					className="h-4 w-4 rounded border-neutral-300"
 					aria-label="Select message"
 				/>
-				<button type="button" className="contents text-left" onClick={() => openDraftComposer(message.id)}>
+				<Link href={href} className="contents text-left">
 					{content}
-				</button>
+				</Link>
 			</div>
 		);
 	}
@@ -244,6 +245,7 @@ export function MessageFolderPage({
 }: MessageFolderPageProps) {
 	const { selectedMailbox, isLoading: mailboxesLoading } = useSelectedMailbox();
 	const { query } = useMailSearch();
+	const isMobile = useIsMobile();
 	const [offset, setOffset] = useState(0);
 	const [internalSelectedMessages, setInternalSelectedMessages] = useState<
 		Array<{ id: string; read: boolean }>
@@ -463,7 +465,7 @@ export function MessageFolderPage({
 						config={config}
 						selected={selectedIds.includes(message.id)}
 						active={message.id === selectedMessageId}
-						compact={compact}
+						compact={compact || isMobile}
 						currentAccountName={currentAccountName}
 						onSelectedChange={updateSelectedMessage}
 						onMessageAction={(messageId, action) =>

@@ -2,12 +2,14 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { CalendarDays, Check, LogOut, Settings, ShieldCheck, UserRound, UsersRound } from "lucide-react";
+import { CalendarDays, Check, Inbox, LogOut, Settings, ShieldCheck, UserRound, UsersRound } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useSelectedMailbox } from "@/components/mailbox-provider";
+import { ProgressiveAvatarImage } from "@/components/progressive-avatar-image";
 import { isIdentityMailbox } from "@/components/mailbox-provider-utils";
 import { useMessageCounts } from "@/hooks/use-message-counts";
 import { authFetch } from "@/lib/auth/client";
+import { getAvatarColorStyle } from "@/lib/avatar-colors";
 import { logoutClientSession } from "@/lib/auth/logout";
 import {
 	PROFILE_AVATAR_CHANGED_EVENT,
@@ -23,6 +25,7 @@ import type {
 	AccountAvatarProps,
 	MailboxAccountRowProps,
 	MailboxSelectorUser,
+	MailboxSelectorProps,
 } from "./mailbox-selector-types";
 import {
 	getAccountInitial,
@@ -33,6 +36,7 @@ import {
 
 function AccountAvatar({
 	name,
+	colorSeed = name,
 	hasAvatar = false,
 	avatarUrl = "/api/profile/avatar",
 	size = "small",
@@ -47,8 +51,7 @@ function AccountAvatar({
 
 	if (hasAvatar && !imageFailed) {
 		return (
-			// eslint-disable-next-line @next/next/no-img-element
-			<img
+			<ProgressiveAvatarImage
 				src={avatarUrl}
 				alt={`${name} profile picture`}
 				className={`${sizeClass} shrink-0 rounded-full border border-neutral-200 object-cover`}
@@ -63,6 +66,7 @@ function AccountAvatar({
 	return (
 		<div
 			className={`${sizeClass} flex shrink-0 items-center justify-center rounded-full bg-blue-600 font-semibold text-white`}
+			style={getAvatarColorStyle(colorSeed)}
 			aria-hidden="true"
 		>
 			{getAccountInitial(name)}
@@ -81,6 +85,7 @@ function MailboxAccountRow({ mailbox, unread, avatarUrl, onSelect }: MailboxAcco
 		>
 			<AccountAvatar
 				name={name}
+				colorSeed={getMailboxAddress(mailbox)}
 				hasAvatar={!!mailbox.hasAvatar || !!avatarUrl}
 				avatarUrl={avatarUrl ?? `/api/mailboxes/${mailbox.id}/avatar`}
 			/>
@@ -106,13 +111,13 @@ function MailboxAccountRow({ mailbox, unread, avatarUrl, onSelect }: MailboxAcco
 	);
 }
 
-export function MailboxSelector() {
+export function MailboxSelector({ initialUser }: MailboxSelectorProps = {}) {
 	const { selectedMailbox, setSelectedMailbox, mailboxes, isLoading } = useSelectedMailbox();
 	const pathname = usePathname();
 	const router = useRouter();
 	const [open, setOpen] = useState(false);
-	const [user, setUser] = useState<MailboxSelectorUser | null>(null);
-	const [hasAvatar, setHasAvatar] = useState(false);
+	const [user, setUser] = useState<MailboxSelectorUser | null>(initialUser ?? null);
+	const [hasAvatar, setHasAvatar] = useState(!!initialUser?.hasAvatar);
 	const [avatarUrl, setAvatarUrl] = useState("/api/profile/avatar");
 	const [mailboxAvatarUrls, setMailboxAvatarUrls] = useState<Record<string, string>>({});
 	const ref = useRef<HTMLDivElement>(null);
@@ -183,7 +188,7 @@ export function MailboxSelector() {
 		return () => window.removeEventListener(MAILBOX_AVATAR_CHANGED_EVENT, onMailboxAvatarChanged);
 	}, []);
 
-	if (isLoading) {
+	if (isLoading && !initialUser) {
 		return <Skeleton className="h-10 w-10 rounded-full" />;
 	}
 
@@ -219,6 +224,7 @@ export function MailboxSelector() {
 			>
 				<AccountAvatar
 					name={selectedName}
+					colorSeed={selectedEmail || selectedName}
 					hasAvatar={selectedHasAvatar}
 					avatarUrl={selectedAvatarUrl}
 					onAvatarError={() => {
@@ -228,11 +234,12 @@ export function MailboxSelector() {
 			</button>
 
 			{open && (
-				<div className="absolute right-0 top-14 z-50 w-[360px] overflow-hidden rounded-[28px] border border-neutral-200 bg-[#eef3fb] p-3 shadow-2xl shadow-neutral-900/20 max-h-[82vh] overflow-y-auto">
+				<div className="absolute right-0 top-14 w-[360px] overflow-hidden rounded-[28px] border border-neutral-200 bg-[#eef3fb] p-3 shadow-2xl shadow-neutral-900/20 max-h-[82vh] overflow-y-auto z-90">
 					<div className="rounded-[22px] bg-white px-5 py-5">
 						<div className="flex items-center gap-4">
 							<AccountAvatar
 								name={selectedName}
+								colorSeed={selectedEmail || selectedName}
 								hasAvatar={selectedHasAvatar}
 								avatarUrl={selectedAvatarUrl}
 								size="large"
@@ -258,11 +265,19 @@ export function MailboxSelector() {
 							<Check className="h-5 w-5 shrink-0 text-blue-600" />
 						</div>
 						<Link
-							href="/calendar"
+							href="/inbox"
 							onClick={() => setOpen(false)}
 							className="mt-4 flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-[#f2f6fc]"
 						>
-							<CalendarDays className="h-5 w-5 text-neutral-600" />
+							<Inbox size={18} className="text-neutral-600" />
+							Inbox
+						</Link>
+						<Link
+							href="/calendar"
+							onClick={() => setOpen(false)}
+							className="mt-1 flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-[#f2f6fc]"
+						>
+							<CalendarDays size={18} className="text-neutral-600" />
 							Calendar
 						</Link>
 						<Link
@@ -270,7 +285,7 @@ export function MailboxSelector() {
 							onClick={() => setOpen(false)}
 							className="mt-1 flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-[#f2f6fc]"
 						>
-							<Settings className="h-5 w-5 text-neutral-600" />
+							<Settings size={18} className="text-neutral-600" />
 							Settings
 						</Link>
 					</div>
@@ -291,6 +306,7 @@ export function MailboxSelector() {
 										onSelect={() => {
 											setSelectedMailbox(mailbox);
 											setOpen(false);
+											router.push("/inbox");
 										}}
 									/>
 								);
@@ -305,7 +321,7 @@ export function MailboxSelector() {
 								onClick={() => setOpen(false)}
 								className={`flex items-center gap-3 border-t border-neutral-100 px-5 py-4 text-sm font-medium text-neutral-800 hover:bg-[#f2f6fc] ${adminActive ? "bg-blue-50" : ""}`}
 							>
-								<ShieldCheck className="h-5 w-5 text-neutral-600" />
+								<ShieldCheck size={18} className="text-neutral-600" />
 								Admin
 								{adminActive && <Check className="ml-auto h-4 w-4 text-blue-600" />}
 							</Link>
@@ -315,7 +331,7 @@ export function MailboxSelector() {
 							onClick={logout}
 							className="flex w-full items-center gap-3 border-t border-neutral-100 px-5 py-4 text-left text-sm font-medium text-neutral-800 hover:bg-[#f2f6fc]"
 						>
-							<LogOut className="h-5 w-5 text-neutral-600" />
+							<LogOut size={18} className="text-neutral-600" />
 							Sign out
 						</button>
 					</div>

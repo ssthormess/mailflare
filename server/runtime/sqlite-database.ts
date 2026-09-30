@@ -54,14 +54,14 @@ class SqlitePreparedStatement {
 	}
 
 	async first<T = Row>(column?: string): Promise<T | null> {
-		const row = this.statement().get(...this.params) as Row | undefined;
+		const row = this.statement().raw(false).get(...this.params) as Row | undefined;
 		if (!row) return null;
 		return (column ? row[column] : row) as T;
 	}
 
 	async run<T = Row>() {
 		if (this.isRead()) {
-			const results = this.statement().all(...this.params) as T[];
+			const results = this.statement().raw(false).all(...this.params) as T[];
 			return { results, success: true as const, meta: meta() };
 		}
 		const info = this.statement().run(...this.params);

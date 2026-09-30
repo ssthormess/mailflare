@@ -6,16 +6,19 @@ import { webhookDeliveries, webhooks } from "@/db/schema";
 import { parseWebhookEvents } from "@/lib/email/webhooks";
 import { summariseDeliveryStats } from "./utils";
 import { requireSessionUser } from "@/lib/api/auth";
+import { isPrimaryAdmin } from "@/lib/auth/admin";
 import { newId } from "@/lib/ids";
 import { webhookSchema } from "@/lib/validators";
 import { readJsonBody } from "@/lib/http/request";
 import { RequestBodyTooLargeError } from "@/lib/http/errors";
+import { hasValidSessionMutationOrigin } from "@/lib/auth/origin";
 
 export async function GET(request: Request) {
 	const env = getEnv();
 	const auth = await requireSessionUser(env, request);
 	if (auth.error) return auth.error;
 	const user = auth.user;
+	if (!isPrimaryAdmin(user)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 	const db = getDb(env);
 	const rows = await db
 		.select()
@@ -53,6 +56,8 @@ export async function POST(request: Request) {
 	const auth = await requireSessionUser(env, request);
 	if (auth.error) return auth.error;
 	const user = auth.user;
+	if (!isPrimaryAdmin(user)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+	if (!hasValidSessionMutationOrigin(request)) return NextResponse.json({ error: "Invalid origin" }, { status: 403 });
 	let body: unknown;
 	try {
 		body = await readJsonBody(request, 16 * 1024);

@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { FileText, Forward, Minimize2, Paperclip, Reply, Trash2, X } from "lucide-react";
+import type { DragEvent } from "react";
+import { ChevronUp, FileText, Forward, Maximize2, Minimize2, Minus, Paperclip, Reply, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,6 +13,8 @@ import { useSelectedMailbox } from "@/components/mailbox-provider";
 import { authFetch } from "@/lib/auth/client";
 import { formatEmailAddress, getEmailAddress } from "@/lib/email/address";
 import { cn } from "@/lib/utils";
+import { SendReview } from "@/components/agent/send-review";
+import type { ReviewSnapshot } from "@/components/agent/send-review-types";
 import { buildSendFormData, fetchDraft, formatAttachmentSize } from "./utils";
 import { RecipientInput } from "./recipient-input";
 import { RichTextEditor } from "./rich-text-editor";
@@ -26,6 +29,7 @@ import {
 } from "./rich-text-utils";
 import { headerToRecipients, isValidRecipient, recipientsToHeader } from "./recipient-utils";
 import type { ComposeAttachment, ComposeStoredAttachment, ComposeThreading } from "./types";
+import type { ComposeAttachmentPolicy } from "./attachment-policy-types";
 
 type Toast = { type: "success" | "error"; message: string } | null;
 
@@ -41,6 +45,8 @@ export function ComposeForm({
 	const router = useRouter();
 	const { selectedMailbox, setSelectedMailbox, mailboxes } = useSelectedMailbox();
 	const [draftId, setDraftId] = useState<string | null>(null);
+	const [agentRevision, setAgentRevision] = useState<number | null>(null);
+	const [agentReview, setAgentReview] = useState<{ approvalId: string; snapshot: ReviewSnapshot } | null>(null);
 	const [to, setTo] = useState<string[]>([]);
 	const [cc, setCc] = useState<string[]>([]);
 	const [bcc, setBcc] = useState<string[]>([]);
@@ -54,6 +60,10 @@ export function ComposeForm({
 	const [attachments, setAttachments] = useState<ComposeAttachment[]>([]);
 	// Attachments the draft already holds server-side (a forwarded message's files).
 	const [storedAttachments, setStoredAttachments] = useState<ComposeStoredAttachment[]>([]);
+	const [attachmentPolicy, setAttachmentPolicy] = useState<ComposeAttachmentPolicy>({ maxMb: 25, cloudThresholdBytes: 3_000_000 });
+	const [draggingFiles, setDraggingFiles] = useState(false);
+	const [modalMode, setModalMode] = useState(false);
+	const [minimized, setMinimized] = useState(false);
 	const [toast, setToast] = useState<Toast>(null);
 	const [loading, setLoading] = useState(false);
 	const [loadingDraft, setLoadingDraft] = useState(false);
@@ -65,11 +75,20 @@ export function ComposeForm({
 	const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const draftGeneration = useRef(0);
 	const attachmentInput = useRef<HTMLInputElement | null>(null);
+	const fileDragDepth = useRef(0);
 	const previousSignature = useRef("");
 
 	useEffect(() => {
 		if (!selectedMailbox && mailboxes.length === 1) setSelectedMailbox(mailboxes[0]);
 	}, [mailboxes, selectedMailbox, setSelectedMailbox]);
+
+	useEffect(() => {
+		let active = true;
+		void authFetch("/api/attachment-policy", { cache: "no-store" }).then(async (response) => {
+			if (response.ok && active) setAttachmentPolicy((await response.json()) as ComposeAttachmentPolicy);
+		}).catch(() => {});
+		return () => { active = false; };
+	}, []);
 
 	const senderAddresses = useMemo(() => {
 		if (!selectedMailbox) return [];
@@ -114,6 +133,8 @@ export function ComposeForm({
 				if (cancelled) return;
 
 				setDraftId(draft.id);
+				setAgentRevision(draft.agent?.revision ?? null);
+				setScheduledAt(draft.agent?.scheduledAt ? new Date(draft.agent.scheduledAt) : null);
 				setTo(headerToRecipients(draft.toAddr));
 				const draftCc = headerToRecipients(draft.ccAddr);
 				const draftBcc = headerToRecipients(draft.bccAddr);
@@ -124,10 +145,10 @@ export function ComposeForm({
 				setThreading(
 					draft.inReplyTo || draft.threadId
 						? {
-								inReplyTo: draft.inReplyTo ?? null,
-								references: draft.references ?? null,
-								threadId: draft.threadId ?? null,
-							}
+							inReplyTo: draft.inReplyTo ?? null,
+							references: draft.references ?? null,
+							threadId: draft.threadId ?? null,
+						}
 						: null,
 				);
 				setSubject(draft.subject ?? "");
@@ -232,6 +253,31 @@ export function ComposeForm({
 		}
 		setLoading(true);
 		const fullHtml = joinQuotedHtml(html, quotedHtml);
+		if (draftId && agentRevision !== null) {
+			try {
+				if (saveTimer.current) clearTimeout(saveTimer.current);
+				if (attachments.length > 0) {
+					const form = new FormData();
+					for (const attachment of attachments) form.append("attachments", attachment.file);
+					const uploaded = await authFetch(`/api/drafts/${draftId}/attachments`, { method: "POST", body: form });
+					const result = await uploaded.json() as { attachments?: ComposeStoredAttachment[]; error?: string };
+					if (!uploaded.ok) throw new Error(result.error || "Could not add attachments to the draft");
+					setStoredAttachments((current) => [...current, ...(result.attachments ?? [])]);
+					setAttachments([]);
+				}
+				const updated = await authFetch(`/api/drafts/${draftId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mailboxId: selectedMailbox?.id, from: fromAddr, to: recipientsToHeader(to), cc: recipientsToHeader(cc), bcc: recipientsToHeader(bcc), subject, html: fullHtml, text: htmlToPlainText(fullHtml), inReplyTo: threading?.inReplyTo ?? null, references: threading?.references ?? null, threadId: threading?.threadId ?? null, scheduledAt: scheduledAt?.toISOString() ?? null }) });
+				if (!updated.ok) throw new Error("Could not save the draft for review");
+				const current = await fetchDraft(draftId);
+				if (!current.agent) throw new Error("AI draft metadata is missing");
+				setAgentRevision(current.agent.revision);
+				const response = await authFetch("/api/agent/approvals", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ draftId, expectedRevision: current.agent.revision }) });
+				const result = await response.json() as { approvalId?: string; snapshot?: ReviewSnapshot; error?: string };
+				if (!response.ok || !result.approvalId || !result.snapshot) throw new Error(result.error || "Could not create review");
+				setAgentReview({ approvalId: result.approvalId, snapshot: result.snapshot });
+			} catch (cause) { setToast({ type: "error", message: cause instanceof Error ? cause.message : "Could not review draft" }); }
+			finally { setLoading(false); }
+			return;
+		}
 		const res = await authFetch("/api/send", {
 			method: "POST",
 			body: buildSendFormData({
@@ -245,7 +291,7 @@ export function ComposeForm({
 				html: fullHtml,
 				mailboxId: selectedMailbox?.id,
 				threading: threading ?? undefined,
-				draftId: storedAttachments.length > 0 ? draftId : null,
+				draftId,
 				scheduledAt,
 			}),
 		});
@@ -341,12 +387,12 @@ export function ComposeForm({
 			setToast({ type: "error", message: "A message can include at most 10 attachments" });
 			return;
 		}
-		if (nextFiles.some((file) => file.size > 10 * 1024 * 1024)) {
-			setToast({ type: "error", message: "Each attachment must be 10 MB or smaller" });
+		if (nextFiles.some((file) => file.size > attachmentPolicy.maxMb * 1_000_000)) {
+			setToast({ type: "error", message: `Each attachment must be ${attachmentPolicy.maxMb} MB or smaller` });
 			return;
 		}
-		if (totalSize > 20 * 1024 * 1024) {
-			setToast({ type: "error", message: "Attachments must total 20 MB or less" });
+		if (totalSize > attachmentPolicy.maxMb * 1_000_000) {
+			setToast({ type: "error", message: `Attachments must total ${attachmentPolicy.maxMb} MB or less` });
 			return;
 		}
 
@@ -357,6 +403,32 @@ export function ComposeForm({
 		if (attachmentInput.current) attachmentInput.current.value = "";
 	}
 
+	function onFileDragEnter(event: DragEvent<HTMLFormElement>) {
+		if (!event.dataTransfer.types.includes("Files")) return;
+		fileDragDepth.current += 1;
+		if (!loading && !loadingDraft) setDraggingFiles(true);
+	}
+
+	function onFileDragOver(event: DragEvent<HTMLFormElement>) {
+		if (!event.dataTransfer.types.includes("Files")) return;
+		event.preventDefault();
+		event.dataTransfer.dropEffect = loading || loadingDraft ? "none" : "copy";
+	}
+
+	function onFileDragLeave(event: DragEvent<HTMLFormElement>) {
+		if (!event.dataTransfer.types.includes("Files")) return;
+		fileDragDepth.current = Math.max(0, fileDragDepth.current - 1);
+		if (fileDragDepth.current === 0) setDraggingFiles(false);
+	}
+
+	function onFileDrop(event: DragEvent<HTMLFormElement>) {
+		if (!event.dataTransfer.types.includes("Files")) return;
+		event.preventDefault();
+		fileDragDepth.current = 0;
+		setDraggingFiles(false);
+		if (!loading && !loadingDraft) addAttachments(event.dataTransfer.files);
+	}
+
 	function selectSender(value: string) {
 		const option = senderOptions.find((item) => `${item.mailbox.id}|${item.address}` === value);
 		if (!option) return;
@@ -364,26 +436,88 @@ export function ComposeForm({
 		if (selectedMailbox?.id !== option.mailbox.id) setSelectedMailbox(option.mailbox);
 	}
 
+	const attachmentContent = (attachments.length > 0 || storedAttachments.length > 0) && (
+		<div>
+		<div className="flex min-w-0 flex-nowrap gap-2 overflow-x-auto overflow-y-hidden px-3 py-2">
+			{storedAttachments.map((attachment) => (
+				<div
+					key={attachment.id}
+					className="flex max-w-full shrink-0 items-center gap-2 rounded-lg bg-neutral-100 px-2 py-1 text-xs"
+					title="Carried over from the forwarded message"
+				>
+					<FileText className="h-4 w-4 shrink-0 text-neutral-500" />
+					<span className="max-w-48 truncate">{attachment.filename}</span>
+					<span className="text-xs text-neutral-400">{formatAttachmentSize(attachment.size)}</span>
+					<button
+						type="button"
+						onClick={() => void removeStoredAttachment(attachment.id)}
+						className="rounded-full p-1 text-neutral-400 hover:bg-neutral-200 hover:text-neutral-700"
+					>
+						<X className="h-3.5 w-3.5" />
+						<span className="sr-only">Remove attachment</span>
+					</button>
+				</div>
+			))}
+			{attachments.map((attachment) => (
+				<div
+					key={attachment.id}
+					className="flex max-w-full shrink-0 items-center gap-2 rounded-lg bg-neutral-100 px-2 py-1 text-xs"
+				>
+					<FileText className="h-4 w-4 shrink-0 text-neutral-500" />
+					<span className="max-w-48 truncate font-medium">{attachment.file.name}</span>
+					<span className="text-xs text-neutral-400">
+						{formatAttachmentSize(attachment.file.size)}
+					</span>
+					<button
+						type="button"
+						onClick={() =>
+							setAttachments((current) =>
+								current.filter((item) => item.id !== attachment.id),
+							)
+						}
+						className="rounded-full p-1 text-neutral-400 hover:bg-neutral-200 hover:text-neutral-700"
+					>
+						<X className="h-3.5 w-3.5" />
+						<span className="sr-only">Remove attachment</span>
+					</button>
+				</div>
+			))}
+		</div>
+		<p className="px-3 pb-2 text-xs text-amber-700">Cloudflare limits general email messages to 5 MiB including encoding. Files over 3 MB{([...attachments.map((item) => item.file.size), ...storedAttachments.map((item) => item.size)].some((size) => size > attachmentPolicy.cloudThresholdBytes)) ? " here will" : " or files that exceed the message budget may"} be sent as 30-day R2 download links.</p>
+		</div>
+	);
+
 	const frameClass =
 		mode === "popup"
-			? "fixed bottom-4 right-4 z-40 flex h-[min(520px,calc(100vh-88px))] w-[min(560px,calc(100vw-32px))] flex-col overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-2xl"
-			: "flex h-full min-h-[720px] w-full max-w-4xl flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm";
+			? minimized
+				? "fixed bottom-0 right-8 z-40 flex h-9 w-[min(260px,calc(100vw-32px))] flex-col overflow-hidden rounded-t-lg border border-neutral-200 bg-white shadow-2xl"
+				: modalMode
+				? "fixed left-1/2 top-1/2 z-50 flex h-[86vh] w-[min(860px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-lg bg-white shadow-2xl"
+				: "fixed bottom-0 right-8 z-40 flex h-[min(520px,calc(100vh-88px))] w-[min(560px,calc(100vw-32px))] flex-col overflow-hidden rounded-t-lg border border-neutral-200 bg-white shadow-2xl"
+			: "relative flex h-full min-h-[720px] w-full max-w-4xl flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm";
 
 	return (
 		<>
+			{agentReview && <SendReview approvalId={agentReview.approvalId} snapshot={agentReview.snapshot} onClose={() => setAgentReview(null)} onSent={() => { setAgentReview(null); if (onClose) onClose(); else router.push("/sent"); }} />}
+			{mode === "popup" && modalMode && !minimized && <div className="fixed inset-0 z-40 bg-neutral-950/65" aria-hidden="true" />}
 			{toast && (
 				<div
 					className={cn(
-						"fixed right-6 top-6 z-50 rounded-lg px-4 py-3 text-sm font-medium shadow-lg",
+						"fixed right-6 top-6 z-[60] rounded-lg px-4 py-3 text-sm font-medium shadow-lg",
 						toast.type === "success" ? "bg-green-600 text-white" : "bg-red-600 text-white",
 					)}
 				>
 					{toast.message}
 				</div>
 			)}
-			<form onSubmit={onSubmit} className={frameClass}>
-				<div className="flex h-9 items-center justify-between bg-neutral-800 px-4 text-sm font-medium text-white">
-					<span className="flex items-center gap-2">
+			<form onSubmit={onSubmit} className={frameClass} role={modalMode && !minimized ? "dialog" : undefined} aria-modal={modalMode && !minimized || undefined} aria-label={modalMode && !minimized ? "Compose message" : undefined} onKeyDown={(event) => { if (modalMode && !minimized && event.key === "Escape") { event.preventDefault(); setModalMode(false); } }} onDragEnterCapture={minimized ? undefined : onFileDragEnter} onDragOverCapture={minimized ? undefined : onFileDragOver} onDragLeaveCapture={minimized ? undefined : onFileDragLeave} onDropCapture={minimized ? undefined : onFileDrop}>
+				{draggingFiles && !minimized && (
+					<div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center border-2 border-dashed border-blue-400 bg-blue-50/90 text-sm font-medium text-blue-700" aria-hidden="true">
+						Drop files to attach
+					</div>
+				)}
+				<div className="flex h-9 shrink-0 items-center justify-between bg-neutral-800 px-4 text-sm font-medium text-white">
+					<span className="flex min-w-0 items-center gap-2 truncate">
 						{threading?.inReplyTo && <Reply className="h-3.5 w-3.5 text-neutral-300" />}
 						{!threading?.inReplyTo && /^fwd?:/i.test(subject) && <Forward className="h-3.5 w-3.5 text-neutral-300" />}
 						{loadingDraft
@@ -397,14 +531,20 @@ export function ComposeForm({
 										: "New Message"}
 					</span>
 					{mode === "popup" && (
-						<div className="flex items-center gap-3 text-neutral-300">
-							<Minimize2 className="h-4 w-4" />
-							<button type="button" onClick={onClose}>
+						<div className="flex shrink-0 items-center gap-3 text-neutral-300">
+							<button type="button" onClick={() => { setMinimized((current) => !current); setDraggingFiles(false); }} aria-label={minimized ? "Restore composer" : "Minimize composer"} title={minimized ? "Restore composer" : "Minimize composer"} className="rounded p-1 hover:bg-neutral-700 hover:text-white">
+								{minimized ? <ChevronUp className="h-4 w-4" /> : <Minus className="h-4 w-4" />}
+							</button>
+							<button type="button" onClick={() => { if (minimized) setMinimized(false); setModalMode((current) => !current); }} aria-label={modalMode ? "Restore floating composer" : "Open composer as modal"} title={modalMode ? "Restore floating composer" : "Open composer as modal"} className="rounded p-1 hover:bg-neutral-700 hover:text-white">
+								{modalMode ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+							</button>
+							<button type="button" onClick={onClose} aria-label="Close composer" className="rounded p-1 hover:bg-neutral-700 hover:text-white">
 								<X className="h-4 w-4" />
 							</button>
 						</div>
 					)}
 				</div>
+				<div className={cn("flex min-h-0 flex-1 flex-col", minimized && "hidden")}>
 				<div className="border-b border-neutral-100 px-4 py-1 flex flex-row items-center">
 					<Label htmlFor={`${mode}-from`} className="text-sm text-neutral-500">From</Label>
 					<Select
@@ -488,6 +628,7 @@ export function ComposeForm({
 					quotedHtml={quotedHtml}
 					disabled={loadingDraft}
 					placeholder="Write your message"
+					footerContent={attachmentContent}
 					toolbarStart={
 						<>
 							<div className="flex items-center">
@@ -497,7 +638,7 @@ export function ComposeForm({
 									disabled={loading || loadingDraft || !fromAddr}
 									className="rounded-r-none px-4"
 								>
-									{loading ? "Sending" : scheduledAt ? "Schedule" : "Send"}
+									{loading ? "Preparing…" : scheduledAt ? "Schedule" : agentRevision !== null ? "Review send" : "Send"}
 								</Button>
 								<ScheduleSendMenu
 									disabled={loading || loadingDraft || !fromAddr}
@@ -517,7 +658,7 @@ export function ComposeForm({
 								className="hidden"
 								onChange={(event) => addAttachments(event.target.files)}
 							/>
-							<Tooltip label="Attach files">
+							<Tooltip label={`Attach files (up to ${attachmentPolicy.maxMb} MB total). Files over 3 MB are sent as 30-day R2 download links.`}>
 								<button
 									type="button"
 									aria-label="Attach files"
@@ -543,53 +684,7 @@ export function ComposeForm({
 						</>
 					}
 				/>
-				{(attachments.length > 0 || storedAttachments.length > 0) && (
-					<div className="flex flex-wrap gap-2 border-t border-neutral-100 px-4 py-3">
-						{storedAttachments.map((attachment) => (
-							<div
-								key={attachment.id}
-								className="flex max-w-full items-center gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm"
-								title="Carried over from the forwarded message"
-							>
-								<FileText className="h-4 w-4 shrink-0 text-neutral-500" />
-								<span className="max-w-48 truncate">{attachment.filename}</span>
-								<span className="text-xs text-neutral-400">{formatAttachmentSize(attachment.size)}</span>
-								<button
-									type="button"
-									onClick={() => void removeStoredAttachment(attachment.id)}
-									className="rounded-full p-1 text-neutral-400 hover:bg-neutral-200 hover:text-neutral-700"
-								>
-									<X className="h-3.5 w-3.5" />
-									<span className="sr-only">Remove attachment</span>
-								</button>
-							</div>
-						))}
-						{attachments.map((attachment) => (
-							<div
-								key={attachment.id}
-								className="flex max-w-full items-center gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm"
-							>
-								<FileText className="h-4 w-4 shrink-0 text-neutral-500" />
-								<span className="max-w-48 truncate">{attachment.file.name}</span>
-								<span className="text-xs text-neutral-400">
-									{formatAttachmentSize(attachment.file.size)}
-								</span>
-								<button
-									type="button"
-									onClick={() =>
-										setAttachments((current) =>
-											current.filter((item) => item.id !== attachment.id),
-										)
-									}
-									className="rounded-full p-1 text-neutral-400 hover:bg-neutral-200 hover:text-neutral-700"
-								>
-									<X className="h-3.5 w-3.5" />
-									<span className="sr-only">Remove attachment</span>
-								</button>
-							</div>
-						))}
-					</div>
-				)}
+				</div>
 			</form>
 		</>
 	);

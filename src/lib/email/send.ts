@@ -12,6 +12,8 @@ import { createAuditLog } from "@/lib/mailboxes/audit";
 import { loadMessageAttachmentContents, storeMessageAttachments, validateAttachments } from "@/lib/email/attachments";
 import type { AttachmentContent } from "@/lib/email/attachment-types";
 import { isPostalConfigured, sendViaPostal } from "@/lib/email/postal";
+import { getOutboundAttachmentMaxMb } from "@/lib/email/attachment-policy";
+import { prepareCloudflareAttachments } from "@/lib/email/cloud-attachment-utils";
 
 export type SendEmailInput = {
 	userId: string;
@@ -34,6 +36,7 @@ export type SendEmailInput = {
 	attachments?: AttachmentContent[];
 	/** Future delivery time. Values at or before the current time send immediately. */
 	scheduledAt?: string | Date;
+	publicOrigin?: string;
 };
 
 const MAX_RECIPIENTS = 50;
@@ -73,6 +76,13 @@ export async function sendEmail(
 	const sender = await getAuthorizedSenderAddress(env, input);
 	const attachments = input.attachments ?? [];
 	validateAttachments(attachments);
+	const maxAttachmentMb = await getOutboundAttachmentMaxMb(env);
+	const maxAttachmentBytes = maxAttachmentMb * 1_000_000;
+	if (attachments.some((attachment) => attachment.content.byteLength > maxAttachmentBytes) ||
+		attachments.reduce((total, attachment) => total + attachment.content.byteLength, 0) > maxAttachmentBytes) {
+		throw new Error(`Attachments exceed the administrator's ${maxAttachmentMb} MB outgoing limit`);
+	}
+	if (input.subject.length > 998) throw new Error("Subject exceeds Cloudflare's 998-character limit");
 
 	const to = toRecipientList(input.to);
 	const cc = toRecipientList(input.cc);
@@ -92,6 +102,9 @@ export async function sendEmail(
 	const headers: Record<string, string> = { ...input.headers };
 	if (inReplyTo) headers["In-Reply-To"] = `<${inReplyTo}>`;
 	if (references.length > 0) headers.References = formatMessageIdHeader(references);
+	if (new TextEncoder().encode(Object.entries(headers).map(([name, value]) => `${name}: ${value}\r\n`).join("")).byteLength > 16 * 1024) {
+		throw new Error("Headers exceed Cloudflare's 16 KB limit");
+	}
 
 	const messageId = newId("msg");
 	const requestedSchedule = input.scheduledAt ? new Date(input.scheduledAt) : null;
@@ -120,7 +133,8 @@ export async function sendEmail(
 		references: references.length ? references.join(" ") : null,
 	});
 	try {
-		await storeMessageAttachments(env, messageId, attachments);
+		const stored = await storeMessageAttachments(env, messageId, attachments);
+		stored.forEach((attachment, index) => { attachments[index].storageId = attachment.id; });
 	} catch (error) {
 		await db.delete(messages).where(eq(messages.id, messageId));
 		throw error;
@@ -170,6 +184,16 @@ async function deliverEmail(env: CloudflareEnv, delivery: PreparedDelivery): Pro
 	const db = getDb(env);
 	const toAddr = joinEmailAddressList(to);
 	try {
+		const prepared = await prepareCloudflareAttachments(env, attachments, {
+			subject: input.subject,
+			html: input.html,
+			text: input.text,
+			headers,
+			publicOrigin: input.publicOrigin,
+		});
+		if (prepared.text !== input.text || prepared.html !== input.html) {
+			await db.update(messages).set({ textBody: prepared.text ?? null, htmlBody: prepared.html ?? null }).where(eq(messages.id, messageId));
+		}
 		const response = isPostalConfigured(env)
 			? await sendViaPostal(env, {
 					from,
@@ -177,37 +201,37 @@ async function deliverEmail(env: CloudflareEnv, delivery: PreparedDelivery): Pro
 					cc,
 					bcc,
 					subject: input.subject,
-					html: input.html,
-					text: input.text,
+					html: prepared.html,
+					text: prepared.text,
 					headers,
-					attachments,
+					attachments: prepared.attachments,
 				})
 			: await env.EMAIL.send({
-					from,
-					to,
-					...(cc.length ? { cc } : {}),
-					...(bcc.length ? { bcc } : {}),
-					subject: input.subject,
-					headers: Object.keys(headers).length ? headers : undefined,
-					html: input.html,
-					text: input.text,
-					attachments: attachments.map((attachment) =>
-						attachment.disposition === "inline" && attachment.contentId
-							? {
-									filename: attachment.filename,
-									type: attachment.type,
-									content: attachment.content,
-									disposition: "inline" as const,
-									contentId: attachment.contentId,
-								}
-							: {
-									filename: attachment.filename,
-									type: attachment.type,
-									content: attachment.content,
-									disposition: "attachment" as const,
-								},
-					),
-				});
+			from,
+			to,
+			...(cc.length ? { cc } : {}),
+			...(bcc.length ? { bcc } : {}),
+			subject: input.subject,
+			headers: Object.keys(headers).length ? headers : undefined,
+			html: prepared.html,
+			text: prepared.text,
+			attachments: prepared.attachments.map((attachment) =>
+				attachment.disposition === "inline" && attachment.contentId
+					? {
+							filename: attachment.filename,
+							type: attachment.type,
+							content: attachment.content,
+							disposition: "inline" as const,
+							contentId: attachment.contentId,
+						}
+					: {
+							filename: attachment.filename,
+							type: attachment.type,
+							content: attachment.content,
+							disposition: "attachment" as const,
+						},
+			),
+		});
 
 		// A fresh message starts its own conversation; Cloudflare's Message-ID is what
 		// any reply will name in In-Reply-To, so key the thread by it.
