@@ -237,6 +237,10 @@ export const updateSpamSettingsSchema = z.object({
 	enabled: z.boolean(),
 });
 
+export const updateRecipientAddressSettingsSchema = z.object({
+	enabled: z.boolean(),
+});
+
 export const changePasswordSchema = z.object({
 	currentPassword: z.string().min(1),
 	newPassword: z.string().min(8).max(128),
