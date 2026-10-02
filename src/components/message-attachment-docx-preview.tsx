@@ -5,7 +5,7 @@ import { FileWarning } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { authFetch } from "@/lib/auth/client";
 import type { MessageAttachmentDocxPreviewProps } from "./message-attachment-docx-preview-types";
-import { sanitizeRenderedDocx } from "./message-attachment-docx-preview-utils";
+import { assertDocxWithinSizeLimits, sanitizeRenderedDocx } from "./message-attachment-docx-preview-utils";
 
 export function MessageAttachmentDocxPreview({ previewUrl }: MessageAttachmentDocxPreviewProps) {
 	const containerRef = useRef<HTMLDivElement>(null);
@@ -27,6 +27,8 @@ export function MessageAttachmentDocxPreview({ previewUrl }: MessageAttachmentDo
 				if (!response.ok) throw new Error("Could not load this attachment");
 
 				const data = await response.arrayBuffer();
+				if (cancelled) return;
+				await assertDocxWithinSizeLimits(data);
 				if (cancelled) return;
 
 				const { renderAsync } = await import("docx-preview");
