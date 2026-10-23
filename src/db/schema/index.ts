@@ -149,6 +149,7 @@ export const mailboxAccess = sqliteTable(
 		uniqueIndex("mailbox_access_mailbox_user_idx").on(t.mailboxId, t.userId),
 		index("mailbox_access_user_idx").on(t.userId),
 		index("mailbox_access_mailbox_idx").on(t.mailboxId),
+		index("mailbox_access_created_by_idx").on(t.createdByUserId),
 	],
 );
 
@@ -219,6 +220,7 @@ export const smartFolders = sqliteTable(
 	(t) => [
 		uniqueIndex("smart_folders_mailbox_domain_idx").on(t.mailboxId, t.domain),
 		index("smart_folders_mailbox_idx").on(t.mailboxId),
+		index("smart_folders_user_idx").on(t.userId),
 	],
 );
 
@@ -242,7 +244,7 @@ export const apiKeys = sqliteTable("api_keys", {
 		.notNull()
 		.$defaultFn(() => new Date()),
 	lastUsedAt: integer("last_used_at", { mode: "timestamp" }),
-});
+}, (t) => [index("api_keys_user_idx").on(t.userId)]);
 
 export const messages = sqliteTable(
 	"messages",
@@ -304,6 +306,15 @@ export const messages = sqliteTable(
 			t.createdAt,
 		),
 		index("messages_mailbox_thread_key_idx").on(t.mailboxId, sql`coalesce(${t.threadId}, ${t.id})`),
+		index("messages_counts_cover_idx").on(t.mailboxId, t.folderId, t.direction, t.status, t.read, t.starred, t.snoozedUntil),
+		index("messages_conv_cover_idx").on(
+			t.mailboxId,
+			t.status,
+			sql`coalesce(${t.threadId}, ${t.id})`,
+			t.createdAt,
+			t.id,
+			t.snoozedUntil,
+		),
 	],
 );
 
@@ -353,7 +364,10 @@ export const spamFeedback = sqliteTable(
 		createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 		updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 	},
-	(t) => [index("spam_feedback_mailbox_idx").on(t.mailboxId)],
+	(t) => [
+		index("spam_feedback_mailbox_idx").on(t.mailboxId),
+		index("spam_feedback_actor_user_idx").on(t.actorUserId),
+	],
 );
 
 export const messageAttachments = sqliteTable(
@@ -401,7 +415,10 @@ export const outboundJobs = sqliteTable("outbound_jobs", {
 	updatedAt: integer("updated_at", { mode: "timestamp" })
 		.notNull()
 		.$defaultFn(() => new Date()),
-});
+}, (t) => [
+	index("outbound_jobs_user_idx").on(t.userId),
+	index("outbound_jobs_message_idx").on(t.messageId),
+]);
 
 export const emailTemplates = sqliteTable(
 	"email_templates",
@@ -439,7 +456,10 @@ export const calendarEvents = sqliteTable(
 		createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 		updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 	},
-	(t) => [index("calendar_events_user_starts_idx").on(t.userId, t.startsAt)],
+	(t) => [
+		index("calendar_events_user_starts_idx").on(t.userId, t.startsAt),
+		index("calendar_events_mailbox_idx").on(t.mailboxId),
+	],
 );
 
 export const bookingEvents = sqliteTable(
@@ -511,6 +531,8 @@ export const routingRules = sqliteTable(
 		index("routing_rules_domain_scope_idx").on(t.domainId, t.scope, t.enabled),
 		index("routing_rules_mailbox_idx").on(t.mailboxId),
 		index("routing_rules_priority_idx").on(t.priority),
+		index("routing_rules_user_idx").on(t.userId),
+		index("routing_rules_folder_idx").on(t.folderId),
 	],
 );
 
@@ -528,7 +550,7 @@ export const webhooks = sqliteTable("webhooks", {
 	createdAt: integer("created_at", { mode: "timestamp" })
 		.notNull()
 		.$defaultFn(() => new Date()),
-});
+}, (t) => [index("webhooks_user_idx").on(t.userId)]);
 
 export const webhookDeliveries = sqliteTable(
 	"webhook_deliveries",
@@ -567,7 +589,7 @@ export const sessions = sqliteTable("sessions", {
 	createdAt: integer("created_at", { mode: "timestamp" })
 		.notNull()
 		.$defaultFn(() => new Date()),
-});
+}, (t) => [index("sessions_user_idx").on(t.userId)]);
 
 /** Single-use links mailed to a user's recovery address. Only the hash is stored. */
 export const passwordResetTokens = sqliteTable(
@@ -619,7 +641,7 @@ export const loginChallenges = sqliteTable("login_challenges", {
 	createdAt: integer("created_at", { mode: "timestamp" })
 		.notNull()
 		.$defaultFn(() => new Date()),
-});
+}, (t) => [index("login_challenges_user_idx").on(t.userId)]);
 
 export const auditLogs = sqliteTable(
 	"audit_logs",
@@ -639,6 +661,8 @@ export const auditLogs = sqliteTable(
 		index("audit_logs_actor_idx").on(t.actorUserId),
 		index("audit_logs_mailbox_idx").on(t.mailboxId),
 		index("audit_logs_created_idx").on(t.createdAt),
+		index("audit_logs_message_id_idx").on(t.messageId),
+		index("audit_logs_target_user_idx").on(t.targetUserId),
 	],
 );
 
@@ -713,6 +737,7 @@ export const backups = sqliteTable(
 	(t) => [
 		index("backups_created_idx").on(t.createdAt),
 		index("backups_status_idx").on(t.status),
+		index("backups_created_by_idx").on(t.createdByUserId),
 	],
 );
 
@@ -725,7 +750,7 @@ export const mailboxAgentSettings = sqliteTable("mailbox_agent_settings", {
 	instructions: text("instructions").notNull().default(""),
 	dailyLimit: integer("daily_limit").notNull().default(25),
 	updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
-});
+}, (t) => [index("mailbox_agent_settings_reviewer_idx").on(t.reviewerUserId)]);
 
 export const aiUsage = sqliteTable("ai_usage", {
 	id: text("id").primaryKey(),
@@ -745,7 +770,10 @@ export const agentConversations = sqliteTable("agent_conversations", {
 	title: text("title").notNull().default("New conversation"),
 	createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 	updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
-}, (t) => [index("agent_conversations_owner_idx").on(t.userId, t.mailboxId, t.updatedAt)]);
+}, (t) => [
+	index("agent_conversations_owner_idx").on(t.userId, t.mailboxId, t.updatedAt),
+	index("agent_conversations_mailbox_idx").on(t.mailboxId),
+]);
 
 export const agentChatMessages = sqliteTable("agent_chat_messages", {
 	id: text("id").primaryKey(),
@@ -768,7 +796,13 @@ export const agentJobs = sqliteTable("agent_jobs", {
 	draftId: text("draft_id").references(() => messages.id, { onDelete: "set null" }),
 	reason: text("reason"),
 	createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
-}, (t) => [uniqueIndex("agent_jobs_source_idx").on(t.mailboxId, t.sourceMessageId), index("agent_jobs_due_idx").on(t.status, t.nextAttemptAt)]);
+}, (t) => [
+	uniqueIndex("agent_jobs_source_idx").on(t.mailboxId, t.sourceMessageId),
+	index("agent_jobs_due_idx").on(t.status, t.nextAttemptAt),
+	index("agent_jobs_source_message_idx").on(t.sourceMessageId),
+	index("agent_jobs_draft_idx").on(t.draftId),
+	index("agent_jobs_reviewer_idx").on(t.reviewerUserId),
+]);
 
 export const agentDraftMetadata = sqliteTable("agent_draft_metadata", {
 	draftId: text("draft_id").primaryKey().references(() => messages.id, { onDelete: "cascade" }),
@@ -779,7 +813,10 @@ export const agentDraftMetadata = sqliteTable("agent_draft_metadata", {
 	humanEditedAt: integer("human_edited_at", { mode: "timestamp" }),
 	scheduledAt: integer("scheduled_at", { mode: "timestamp" }),
 	createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
-});
+}, (t) => [
+	index("agent_draft_meta_source_msg_idx").on(t.sourceMessageId),
+	index("agent_draft_metadata_mailbox_idx").on(t.mailboxId),
+]);
 
 export const agentSendApprovals = sqliteTable("agent_send_approvals", {
 	id: text("id").primaryKey(),
@@ -797,12 +834,17 @@ export const agentSendApprovals = sqliteTable("agent_send_approvals", {
 }, (t) => [
 	index("agent_send_approvals_user_idx").on(t.userId, t.status),
 	uniqueIndex("agent_send_approvals_delivery_idx").on(t.draftId).where(sql`status IN ('claimed', 'sent', 'unknown')`),
+	index("agent_send_approvals_request_key_idx").on(t.requestKeyId),
+	index("agent_send_approvals_mailbox_idx").on(t.mailboxId),
 ]);
 
 export const mcpKeyMailboxes = sqliteTable("mcp_key_mailboxes", {
 	keyId: text("key_id").notNull().references(() => apiKeys.id, { onDelete: "cascade" }),
 	mailboxId: text("mailbox_id").notNull().references(() => mailboxes.id, { onDelete: "cascade" }),
-}, (t) => [uniqueIndex("mcp_key_mailbox_idx").on(t.keyId, t.mailboxId)]);
+}, (t) => [
+	uniqueIndex("mcp_key_mailbox_idx").on(t.keyId, t.mailboxId),
+	index("mcp_key_mailboxes_mailbox_idx").on(t.mailboxId),
+]);
 
 export const schema = {
 	users,
