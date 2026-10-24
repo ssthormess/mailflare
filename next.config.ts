@@ -2,6 +2,9 @@ import type { NextConfig } from "next";
 import { getSecurityHeaders } from "./src/lib/security/headers";
 
 const nextConfig: NextConfig = {
+	experimental: {
+		trustHostHeader: true,
+	},
 	distDir: process.env.MAILFLARE_RUNTIME === "node" ? ".next-node" : undefined,
 	turbopack: {
 		root: import.meta.dirname,
