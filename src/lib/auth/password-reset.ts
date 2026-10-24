@@ -7,6 +7,7 @@ import { deleteUserSessions, hashSessionToken } from "@/lib/auth/session";
 import { getBranding } from "@/lib/branding/service";
 import { sendSystemEmail } from "@/lib/email/system-mail";
 import { createAuditLog } from "@/lib/mailboxes/audit";
+import { getClientIp } from "@/lib/auth/client-ip";
 import { escapeHtml } from "@/lib/auth/password-reset-utils";
 
 const TOKEN_MINUTES = 30;
@@ -75,7 +76,7 @@ export async function completePasswordReset(
 		actorUserId: row.userId,
 		targetUserId: row.userId,
 		action: "auth.password_reset",
-		metadata: { ipAddress: request.headers.get("cf-connecting-ip") ?? "unknown" },
+		metadata: { ipAddress: getClientIp(request) ?? "unknown" },
 	});
 	return { ok: true };
 }
