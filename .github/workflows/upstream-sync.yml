@@ -1,0 +1,59 @@
+name: Upstream Sync
+
+on:
+  schedule:
+    - cron: "23 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    env:
+      UPSTREAM_REPOSITORY: ${{ vars.UPSTREAM_REPOSITORY || 'hieunc229/mailflare' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Merge upstream into branch
+        run: |
+          set -euo pipefail
+          git config user.name "mailflare-upstream-sync"
+          git config user.email "mailflare-upstream-sync@users.noreply.github.com"
+
+          upstream_url="https://github.com/${UPSTREAM_REPOSITORY}.git"
+          if git remote get-url upstream >/dev/null 2>&1; then
+            git remote set-url upstream "${upstream_url}"
+          else
+            git remote add upstream "${upstream_url}"
+          fi
+          git fetch --no-tags upstream
+
+          upstream_branch="$(git remote show upstream | sed -n 's/.*HEAD branch: //p')"
+          if [ -z "${upstream_branch}" ]; then
+            echo "::error::Could not resolve the default branch of ${UPSTREAM_REPOSITORY}."
+            exit 1
+          fi
+          upstream_ref="upstream/${upstream_branch}"
+
+          if git merge-base --is-ancestor "${upstream_ref}" HEAD; then
+            echo "Already up to date."
+            exit 0
+          fi
+
+          if git merge-base --is-ancestor HEAD "${upstream_ref}"; then
+            echo "Fast-forwarding ${GITHUB_REF_NAME} to ${upstream_ref}."
+            git merge --ff-only "${upstream_ref}"
+          elif git merge --no-edit "${upstream_ref}"; then
+            echo "Merged ${upstream_ref} into ${GITHUB_REF_NAME}."
+          else
+            git merge --abort || true
+            echo "::error::${UPSTREAM_REPOSITORY} conflicts with local commits on ${GITHUB_REF_NAME}. Resolve the merge manually; no fork changes were discarded."
+            exit 1
+          fi
+
+          git push origin "HEAD:${GITHUB_REF_NAME}"
