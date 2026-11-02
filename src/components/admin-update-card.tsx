@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CheckCircle2, CircleX, Database, RefreshCw } from "lucide-react";
+import { CheckCircle2, CircleX, Database, RefreshCw } from "@/components/icons";
+import { useLanguage } from "@/components/language-provider";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -13,6 +14,7 @@ import {
 import type { MigrationStatusResponse, UpdateStatusResponse, UpdateWorkflowResponse } from "./admin-update-card-types";
 
 export function AdminUpdateCard() {
+	const { t } = useLanguage();
 	const [status, setStatus] = useState<UpdateStatusResponse>();
 	const [result, setResult] = useState<UpdateWorkflowResponse>();
 	const [error, setError] = useState("");
@@ -32,7 +34,7 @@ export function AdminUpdateCard() {
 			})
 			.catch((statusError) => {
 				if (isActive) {
-					setError(statusError instanceof Error ? statusError.message : "Could not check for updates");
+					setError(statusError instanceof Error ? statusError.message : t("update.checkFailed"));
 				}
 			})
 			.finally(() => {
@@ -45,7 +47,7 @@ export function AdminUpdateCard() {
 			})
 			.catch((statusError) => {
 				if (isActive) {
-					setMigrationError(statusError instanceof Error ? statusError.message : "Could not check database migrations");
+					setMigrationError(statusError instanceof Error ? statusError.message : t("update.migrationCheckFailed"));
 				}
 			})
 			.finally(() => {
@@ -65,7 +67,7 @@ export function AdminUpdateCard() {
 		try {
 			setResult(await triggerApplicationUpdate());
 		} catch (updateError) {
-			setError(updateError instanceof Error ? updateError.message : "Could not start the update");
+			setError(updateError instanceof Error ? updateError.message : t("update.startFailed"));
 		} finally {
 			setIsPending(false);
 		}
@@ -78,7 +80,7 @@ export function AdminUpdateCard() {
 			setMigrationStatus(await applyDatabaseMigrations());
 		} catch (migrationFailure) {
 			setMigrationError(
-				migrationFailure instanceof Error ? migrationFailure.message : "Could not apply database migrations",
+				migrationFailure instanceof Error ? migrationFailure.message : t("update.migrateFailed"),
 			);
 		} finally {
 			setIsMigrating(false);
@@ -92,9 +94,9 @@ export function AdminUpdateCard() {
 					<RefreshCw className="h-5 w-5" />
 				</div>
 				<div>
-					<CardTitle className="text-base">Application update</CardTitle>
+					<CardTitle className="text-base">{t("update.title")}</CardTitle>
 					<p className="mt-1 text-sm text-neutral-500">
-						Sync the latest Mailflare release and keep its database schema up to date.
+						{t("update.description")}
 					</p>
 				</div>
 			</CardHeader>
@@ -103,22 +105,26 @@ export function AdminUpdateCard() {
 
 				{!isChecking && status?.configured === false && (
 					<div className="space-y-3">
-						<p className="text-sm text-neutral-600">Complete the required Cloudflare Worker configuration:</p>
-						<ul className="divide-y divide-neutral-100 overflow-hidden rounded-2xl border border-neutral-100">
-							{status.configuration?.map((item) => (
-								<li key={item.name} className="flex items-center gap-3 px-4 py-3 text-sm">
-									{item.configured ? (
-										<CheckCircle2 className="h-4 w-4 shrink-0 text-green-600" />
-									) : (
-										<CircleX className="h-4 w-4 shrink-0 text-red-600" />
-									)}
-									<code className="text-xs font-medium text-neutral-800">{item.name}</code>
-									<span className={`ml-auto text-xs font-medium ${item.configured ? "text-green-700" : "text-red-600"}`}>
-										{item.configured ? "Configured" : "Missing"}
-									</span>
-								</li>
-							))}
-						</ul>
+						<p className="text-sm text-neutral-600">
+							{status.configuration?.length ? t("update.completeConfig") : t("update.selfHosted")}
+						</p>
+						{!!status.configuration?.length && (
+							<ul className="divide-y divide-neutral-100 overflow-hidden rounded-2xl border border-neutral-100">
+								{status.configuration.map((item) => (
+									<li key={item.name} className="flex items-center gap-3 px-4 py-3 text-sm">
+										{item.configured ? (
+											<CheckCircle2 className="h-4 w-4 shrink-0 text-green-600" />
+										) : (
+											<CircleX className="h-4 w-4 shrink-0 text-red-600" />
+										)}
+										<code className="text-xs font-medium text-neutral-800">{item.name}</code>
+										<span className={`ml-auto text-xs font-medium ${item.configured ? "text-green-700" : "text-red-600"}`}>
+											{item.configured ? t("update.configured") : t("update.missing")}
+										</span>
+									</li>
+								))}
+							</ul>
+						)}
 					</div>
 				)}
 
@@ -132,8 +138,8 @@ export function AdminUpdateCard() {
 							)}
 							<p className="min-w-0 text-sm text-neutral-700">
 								{status.available
-									? `Mailflare v${status.targetVersion} is available. You are using v${status.currentVersion}.`
-									: `Mailflare v${status.currentVersion} is up to date.`}
+									? t("update.available", { target: status.targetVersion, current: status.currentVersion })
+									: t("update.upToDate", { current: status.currentVersion })}
 							</p>
 							{status.available && (
 								<button
@@ -142,11 +148,15 @@ export function AdminUpdateCard() {
 									disabled={isPending}
 									className="ml-auto shrink-0 text-sm font-medium text-blue-700 hover:underline disabled:pointer-events-none disabled:opacity-50"
 								>
-									{isPending ? "Starting update..." : "Update Mailflare"}
+									{isPending ? t("update.starting") : t("update.updateButton")}
 								</button>
 							)}
 						</div>
+					</div>
+				)}
 
+				{(isCheckingMigrations || migrationStatus) && (
+					<div className="divide-y divide-neutral-100 overflow-hidden rounded-2xl border border-neutral-100">
 						{isCheckingMigrations && (
 							<div className="flex items-center gap-3 px-4 py-4">
 								<Skeleton className="h-4 w-4 rounded-full" />
@@ -158,7 +168,7 @@ export function AdminUpdateCard() {
 							<div className="flex items-center gap-3 px-4 py-4">
 								<Database className={`h-4 w-4 shrink-0 text-amber-600 ${isMigrating ? "animate-pulse" : ""}`} />
 								<p className="text-sm text-neutral-700">
-									{migrationStatus.pending.length} database {migrationStatus.pending.length === 1 ? "migration is" : "migrations are"} pending.
+									{t("update.pendingMigrations", { count: migrationStatus.pending.length })}
 								</p>
 								<button
 									type="button"
@@ -166,7 +176,7 @@ export function AdminUpdateCard() {
 									disabled={isMigrating}
 									className="ml-auto shrink-0 text-sm font-medium text-blue-700 hover:underline disabled:pointer-events-none disabled:opacity-50"
 								>
-									{isMigrating ? "Updating database..." : "Update database"}
+									{isMigrating ? t("update.updatingDatabase") : t("update.updateDatabase")}
 								</button>
 							</div>
 						)}
@@ -174,7 +184,14 @@ export function AdminUpdateCard() {
 						{!isCheckingMigrations && !!migrationStatus?.unknown.length && (
 							<div className="flex items-center gap-3 px-4 py-4 text-sm text-red-600">
 								<CircleX className="h-4 w-4 shrink-0" />
-								Deploy the matching Mailflare release before changing this database.
+								{t("update.deployMatching")}
+							</div>
+						)}
+
+						{!isCheckingMigrations && migrationStatus?.ready && (
+							<div className="flex items-center gap-3 px-4 py-4">
+								<CheckCircle2 className="h-4 w-4 shrink-0 text-green-600" />
+								<p className="text-sm text-neutral-700">{t("update.databaseUpToDate")}</p>
 							</div>
 						)}
 					</div>
@@ -182,16 +199,17 @@ export function AdminUpdateCard() {
 
 				{result?.ok && (
 					<p className="text-sm text-green-700">
-						Update started for {result.repository}@{result.ref}. Refresh this page after Cloudflare deploys it. {" "}
+						{t("update.started", { repo: result.repository, ref: result.ref })}{" "}
 						{result.runUrl && (
 							<a className="font-medium underline" href={result.runUrl} target="_blank" rel="noreferrer">
-								View workflow
+								{t("update.viewWorkflow")}
+								<span className="sr-only"> ({t("common.opensInNewTab")})</span>
 							</a>
 						)}
 					</p>
 				)}
-				{error && <p className="text-sm text-red-600">{error}</p>}
-				{migrationError && <p className="text-sm text-red-600">{migrationError}</p>}
+				{error && <p role="alert" className="text-sm text-red-600">{error}</p>}
+				{migrationError && <p role="alert" className="text-sm text-red-600">{migrationError}</p>}
 			</CardContent>
 		</Card>
 	);

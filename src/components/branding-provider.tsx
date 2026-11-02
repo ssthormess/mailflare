@@ -1,19 +1,20 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState } from "react";
+import type { Branding } from "@/lib/branding/types";
 import type { BrandingContextValue } from "./branding-provider-types";
 import { DEFAULT_BRANDING, fetchBranding } from "./branding-provider-utils";
 
 const BrandingContext = createContext<BrandingContextValue | null>(null);
 
-export function BrandingProvider({ children }: { children: React.ReactNode }) {
-	const [branding, setBranding] = useState(DEFAULT_BRANDING);
-	const [brandingLoaded, setBrandingLoaded] = useState(false);
+export function BrandingProvider({ children, initialBranding }: { children: React.ReactNode; initialBranding?: Branding }) {
+	const [branding, setBranding] = useState(initialBranding ?? DEFAULT_BRANDING);
+	const [iconVersion, setIconVersion] = useState(0);
 
 	async function refreshBranding() {
 		const nextBranding = await fetchBranding();
 		setBranding(nextBranding);
-		setBrandingLoaded(true);
+		setIconVersion(Date.now());
 		if (document.title === "Mailflare" || document.title === branding.appName) {
 			document.title = nextBranding.appName;
 		}
@@ -23,15 +24,10 @@ export function BrandingProvider({ children }: { children: React.ReactNode }) {
 		void refreshBranding();
 	}, []);
 
-	const iconUrl = branding.hasCustomIcon
-		? `/api/branding/icon?v=${branding.iconVersion ?? "0"}`
-		: "/icon-96.png";
-
 	return (
 		<BrandingContext.Provider value={{
 			...branding,
-			iconUrl,
-			brandingLoaded,
+			iconUrl: branding.hasCustomIcon ? `/api/branding/icon?v=${iconVersion}` : "/icon-96.png",
 			refreshBranding,
 		}}>
 			{children}
@@ -43,7 +39,6 @@ export function useBranding() {
 	return useContext(BrandingContext) ?? {
 		...DEFAULT_BRANDING,
 		iconUrl: "/icon-96.png",
-		brandingLoaded: false,
 		refreshBranding: async () => undefined,
 	};
 }

@@ -6,6 +6,7 @@ import { messages } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/cookies";
 import { getEnv } from "@/lib/cloudflare";
 import { recipientDomainMatchSql } from "@/lib/email/recipient-domain";
+import { scheduledMessageCondition } from "@/lib/email/scheduled";
 import { listSmartFolders } from "@/lib/smart-folders/service";
 import { buildMessageCounts } from "./utils";
 import { getMailboxAccessLevel, listAccessibleMailboxIds } from "@/lib/mailboxes/access";
@@ -60,7 +61,13 @@ export async function GET(request: Request) {
 			messages.snoozedUntil,
 		);
 
+	const [scheduledRow] = await db
+		.select({ total: count() })
+		.from(messages)
+		.where(and(...conditions, scheduledMessageCondition(db)));
 	const counts = buildMessageCounts(rows);
+	counts.folders.scheduled.total = scheduledRow?.total ?? 0;
+
 	if (mailboxId) {
 		const folders = await listSmartFolders(db, user, mailboxId);
 		const smartFolderCounts: Record<string, { total: number; unread: number }> = {};
@@ -85,5 +92,6 @@ export async function GET(request: Request) {
 		}
 		counts.smartFolders = smartFolderCounts;
 	}
+
 	return NextResponse.json({ counts });
 }

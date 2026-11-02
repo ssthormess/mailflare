@@ -1,5 +1,7 @@
 import type { BulkMessageAction } from "@/app/api/messages/bulk/types";
 import { authFetch } from "@/lib/auth/client";
+import { throwIfDeleteSkipped } from "@/lib/messages/permanent-delete-utils";
+import { markMessagesReadInCaches } from "@/hooks/utils";
 import { getEmailAddress, normalizeEmailAddress, splitEmailAddressList } from "@/lib/email/address";
 import { getLatestEmailContent } from "@/lib/email/reply-content-utils";
 import { formatUserDate } from "@/lib/time/utils";
@@ -23,7 +25,7 @@ import {
   ShieldIcon,
   Trash2Icon,
   TrashIcon,
-} from "lucide-react";
+} from "@/components/icons";
 
 export function getMessageBackHref(
   direction: "inbound" | "outbound",
@@ -50,6 +52,8 @@ export async function runSingleMessageAction(
     throw new Error("Unable to update message");
   }
 
+  await throwIfDeleteSkipped(response, action);
+  if (action === "read" || action === "unread") markMessagesReadInCaches([messageId], action === "read");
   window.dispatchEvent(new Event("mailflare:messages-changed"));
 }
 
@@ -106,32 +110,29 @@ export function getMoveMessageActions(
 ): MoveMessageActionItem[] {
   const actions: MoveMessageActionItem[] = [];
   if ((status === "archived" || status === "spam") && direction === "inbound") {
-    actions.push({ action: "inbox", label: status === "spam" ? "Not spam" : "Inbox", icon: InboxIcon });
+    actions.push({ action: "inbox", labelKey: status === "spam" ? "common.notSpam" : "navigation.inbox", icon: InboxIcon });
   }
   if (status !== "archived")
-    actions.push({ action: "archive", label: "Archived", icon: ArchiveIcon });
+    actions.push({ action: "archive", labelKey: "navigation.archived", icon: ArchiveIcon });
   if (status !== "spam")
-    actions.push({ action: "spam", label: "Spam", icon: ShieldAlertIcon });
+    actions.push({ action: "spam", labelKey: "navigation.spam", icon: ShieldAlertIcon });
   if (status !== "trash")
-    actions.push({ action: "trash", label: "Trash", icon: Trash2Icon });
+    actions.push({ action: "trash", labelKey: "navigation.trash", icon: Trash2Icon });
   return actions;
 }
 
 export function getMessageActionRedirect(
   action: BulkMessageAction,
-  direction: "inbound" | "outbound",
+  listHref: string,
 ) {
-  if (action === "trash") return "/trash";
-  if (action === "spam") return "/spam";
-  if (action === "archive") return "/archived";
-  if (action === "inbox") return "/inbox";
+  if (action === "trash" || action === "spam" || action === "archive" || action === "inbox") return listHref;
   return null;
 }
 
 export function buildReplySubject(subject: string | null | undefined) {
   const trimmed = (subject ?? "").trim();
   if (!trimmed) return "Re:";
-  return /^re:/i.test(trimmed) ? trimmed : `Re: ${trimmed}`;
+  return /^re\s*(\[\d+\])?\s*:/i.test(trimmed) ? trimmed : `Re: ${trimmed}`;
 }
 
 export function buildReplyQuote(
@@ -159,7 +160,7 @@ export function buildReplyQuoteHtml(
   bodyText: string | null | undefined,
   bodyHtml: string | null | undefined,
 ) {
-  const original = bodyHtml ? sanitizeEmailHtml(bodyHtml) : textToHtml(bodyText);
+  const original = bodyHtml ? sanitizeEmailHtml(bodyHtml, { forOutgoing: true }) : textToHtml(bodyText);
   if (!original) return null;
   const when = sentAt ? formatUserDate(sentAt, { weekday: "short", month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" }) : "an earlier date";
   return wrapQuotedHtml(
@@ -168,10 +169,11 @@ export function buildReplyQuoteHtml(
 }
 
 /**
- * Who a reply goes to. A plain reply answers the sender; reply-all also keeps
- * everyone else on the To and Cc lines, minus the mailbox's own addresses so
- * the author is not mailing themselves. Replying to a sent message re-addresses
- * its original recipients.
+ * Who a reply goes to. A plain reply answers the sender, or the Reply-To
+ * addresses when the message names any (RFC 5322 §3.6.2); reply-all also keeps
+ * everyone else on the To and Cc lines, minus the mailbox's own addresses.
+ * The original sender stays even when the message came from another own alias.
+ * Replying to a sent message re-addresses its original recipients.
  */
 export function getReplyRecipients(
   message: ReplyableMessage,
@@ -180,10 +182,10 @@ export function getReplyRecipients(
 ): ReplyRecipients {
   const own = new Set(ownAddresses.map((address) => normalizeEmailAddress(address)));
   const seen = new Set<string>();
-  const unique = (entries: string[]) =>
+  const unique = (entries: string[], excludeOwn = true) =>
     entries.filter((entry) => {
       const key = normalizeEmailAddress(entry);
-      if (!key || own.has(key) || seen.has(key)) return false;
+      if (!key || (excludeOwn && own.has(key)) || seen.has(key)) return false;
       seen.add(key);
       return true;
     });
@@ -194,7 +196,8 @@ export function getReplyRecipients(
     return { to, cc };
   }
 
-  const to = unique([message.fromAddr]);
+  const replyTo = unique(splitEmailAddressList(message.replyTo));
+  const to = replyTo.length ? replyTo : unique([message.fromAddr], false);
   if (mode !== "replyAll") return { to, cc: [] };
   const cc = unique([...splitEmailAddressList(message.toAddr), ...splitEmailAddressList(message.ccAddr)]);
   return { to, cc };
@@ -242,7 +245,7 @@ export function buildForwardHtml(
   ];
   if (message.ccAddr) lines.push(`Cc: ${message.ccAddr}`);
   const header = `<div>---------- Forwarded message ---------<br>${lines.map(escapeHtml).join("<br>")}</div><br>`;
-  const original = bodyHtml ? sanitizeEmailHtml(bodyHtml) : textToHtml(bodyText);
+  const original = bodyHtml ? sanitizeEmailHtml(bodyHtml, { forOutgoing: true }) : textToHtml(bodyText);
   return wrapQuotedHtml(`${header}${original ?? ""}`);
 }
 

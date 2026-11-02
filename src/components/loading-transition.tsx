@@ -3,9 +3,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useIsFetching } from "@tanstack/react-query";
 import { useBranding } from "@/components/branding-provider";
+import { useLanguage } from "@/components/language-provider";
 import { PageLoadingContext } from "@/components/page-loading";
 import { RouteLoadingBar } from "@/components/route-loading-bar";
-import { LoadingSpinner } from "@/components/loading-spinner";
 import type { LoadingTransitionProps } from "./loading-transition-types";
 
 const MINIMUM_LOADING_TIME = 600;
@@ -14,6 +14,7 @@ const MAXIMUM_DATA_WAIT = 10_000;
 let hasShownInitialLoadingTransition = false;
 
 export function LoadingTransition({ children, ready }: LoadingTransitionProps) {
+	const { t } = useLanguage();
 	const branding = useBranding();
 	const showInitialLoader = useRef(!hasShownInitialLoadingTransition).current;
 	const startedAt = useRef(Date.now());
@@ -22,24 +23,27 @@ export function LoadingTransition({ children, ready }: LoadingTransitionProps) {
 	const [contentVisible, setContentVisible] = useState(!showInitialLoader);
 	const [initialLoadComplete, setInitialLoadComplete] = useState(!showInitialLoader);
 	const [iconUrl, setIconUrl] = useState(branding.iconUrl);
-	const [iconReady, setIconReady] = useState(false);
 	const [pageMounted, setPageMounted] = useState(false);
 	const [pendingLoads, setPendingLoads] = useState(0);
 	const [dataWaitExpired, setDataWaitExpired] = useState(false);
+	const [visibleLoads, setVisibleLoads] = useState(0);
 	const loadingIds = useRef(new Set<string>());
+	const visibleIds = useRef(new Set<string>());
 	const fetchingQueries = useIsFetching();
 
-	const reportLoading = useCallback((id: string, loading: boolean) => {
+	const reportLoading = useCallback((id: string, loading: boolean, silent = false) => {
 		if (loading) loadingIds.current.add(id);
 		else loadingIds.current.delete(id);
+		if (loading && !silent) visibleIds.current.add(id);
+		else visibleIds.current.delete(id);
 		setPendingLoads(loadingIds.current.size);
+		setVisibleLoads(visibleIds.current.size);
 	}, []);
 	const loadingContext = useMemo(() => ({ reportLoading }), [reportLoading]);
 	const canComplete = ready && pageMounted && (dataWaitExpired || (pendingLoads === 0 && fetchingQueries === 0));
 
 	useEffect(() => {
 		setIconUrl(branding.iconUrl);
-		setIconReady(false);
 	}, [branding.iconUrl]);
 
 	useEffect(() => {
@@ -82,7 +86,7 @@ export function LoadingTransition({ children, ready }: LoadingTransitionProps) {
 		};
 	}, [canComplete, showInitialLoader]);
 
-	const showTopLoadingBar = initialLoadComplete && (!ready || pendingLoads > 0);
+	const showTopLoadingBar = initialLoadComplete && (!ready || visibleLoads > 0);
 
 	return (
 		<PageLoadingContext.Provider value={loadingContext}>
@@ -96,24 +100,19 @@ export function LoadingTransition({ children, ready }: LoadingTransitionProps) {
 					</div>
 				)}
 				<div
-					aria-label="Loading"
-					aria-live="polite"
+					role="status"
 					className={`fixed inset-0 z-[100] flex items-center justify-center bg-[#f6f8fc] transition-opacity duration-300 ${
 						loaderVisible ? "opacity-100" : "pointer-events-none opacity-0"
 					}`}
 				>
-				<div className="flex w-64 flex-col items-center gap-6">
-					{branding.brandingLoaded && (!branding.hasCustomIcon || iconReady) ? (
+					<span className="sr-only">{loaderVisible ? t("nav.loading") : ""}</span>
+					<div aria-hidden="true" className="flex w-64 flex-col items-center gap-6">
 						<img
 							src={iconUrl}
-							onError={() => setIconUrl("/icon-96.png")}
-							onLoad={() => setIconReady(true)}
-							alt={`${branding.appName} icon`}
+							onError={() => setIconUrl("/icon-192.png")}
+							alt=""
 							className="h-20 w-20 rounded-2xl object-contain"
 						/>
-					) : (
-						<LoadingSpinner />
-					)}
 						<div className="w-full">
 							<div className="h-1.5 overflow-hidden rounded-full bg-blue-100">
 								<div

@@ -94,27 +94,22 @@ export class SqliteDatabase {
 		this.db = new Database(filename) as Database.Database & { __statements?: Map<string, Database.Statement> };
 		(this.db as Database.Database & { __statements?: Map<string, Database.Statement> }).__statements = new Map();
 		this.db.pragma("journal_mode = WAL");
-		this.db.pragma("synchronous = NORMAL");
 		this.db.pragma("foreign_keys = ON");
 		this.db.pragma("busy_timeout = 5000");
-		this.db.pragma("temp_store = MEMORY");
-		// The DB (13GB+) dwarfs host RAM, so reads must ride the kernel page
-		// cache: mmap the whole file and keep only a small in-process cache.
-		this.db.pragma("cache_size = -65536");
-		this.db.pragma("mmap_size = 17179869184");
-		this.db.pragma("wal_autocheckpoint = 1000");
-		// Conversation view groups on coalesce(thread_id, id). Without an index
-		// on that expression SQLite sorts the whole mailbox per request; this
-		// lets the group/order stream straight off the index.
-		this.db.exec(
-			"CREATE INDEX IF NOT EXISTS messages_thread_key_idx ON messages (mailbox_id, status, folder_id, coalesce(thread_id, id), created_at)",
-		);
-		this.db.exec(
-			"CREATE INDEX IF NOT EXISTS messages_inbox_page_idx ON messages (mailbox_id, status, folder_id, created_at DESC, id DESC)",
-		);
-		this.db.exec(
-			"CREATE INDEX IF NOT EXISTS messages_mailbox_thread_key_idx ON messages (mailbox_id, coalesce(thread_id, id))",
-		);
+		// Stock defaults are correct for the smallest installs, so tuning is
+		// opt-in only — no mailbox-size assumptions baked into the tree.
+		// Larger self-host databases can raise the page cache and mmap window
+		// via env (mmap serves reads straight from the OS page cache), keep
+		// sort materialization in memory, or drop synchronous to NORMAL —
+		// under WAL that cannot corrupt the database, but a power loss can
+		// still roll back the last committed transactions.
+		const cacheKb = Number(process.env.SQLITE_CACHE_KB ?? 0);
+		const mmapBytes = Number(process.env.SQLITE_MMAP_BYTES ?? 0);
+		const synchronous = (process.env.SQLITE_SYNCHRONOUS ?? "").toUpperCase();
+		if (Number.isFinite(cacheKb) && cacheKb > 0) this.db.pragma(`cache_size = -${Math.floor(cacheKb)}`);
+		if (Number.isFinite(mmapBytes) && mmapBytes > 0) this.db.pragma(`mmap_size = ${Math.floor(mmapBytes)}`);
+		if ((process.env.SQLITE_TEMP_STORE ?? "").toLowerCase() === "memory") this.db.pragma("temp_store = memory");
+		if (synchronous === "NORMAL" || synchronous === "OFF") this.db.pragma(`synchronous = ${synchronous}`);
 	}
 
 	prepare(sql: string) {

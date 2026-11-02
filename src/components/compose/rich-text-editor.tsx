@@ -12,19 +12,22 @@ import {
 	RemoveFormatting,
 	Strikethrough,
 	Underline,
-} from "lucide-react";
+} from "@/components/icons";
+import { useLanguage } from "@/components/language-provider";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { EmailHtmlRenderer } from "@/components/messages/email-html-renderer";
+import { sanitizeEmailHtml, sanitizeEditorHtml } from "@/lib/email/html";
 import type { RichTextEditorProps, ToolbarCommand } from "./rich-text-editor-types";
 
 const COMMANDS: ToolbarCommand[] = [
-	{ command: "bold", label: "Bold (⌘B)", icon: Bold },
-	{ command: "italic", label: "Italic (⌘I)", icon: Italic },
-	{ command: "underline", label: "Underline (⌘U)", icon: Underline },
-	{ command: "strikeThrough", label: "Strikethrough", icon: Strikethrough },
-	{ command: "insertUnorderedList", label: "Bulleted list", icon: List },
-	{ command: "insertOrderedList", label: "Numbered list", icon: ListOrdered },
-	{ command: "formatBlock", label: "Quote", icon: Quote, value: "blockquote" },
+	{ command: "bold", labelKey: "editor.bold", icon: Bold },
+	{ command: "italic", labelKey: "editor.italic", icon: Italic },
+	{ command: "underline", labelKey: "editor.underline", icon: Underline },
+	{ command: "strikeThrough", labelKey: "editor.strikethrough", icon: Strikethrough },
+	{ command: "insertUnorderedList", labelKey: "editor.bulletedList", icon: List },
+	{ command: "insertOrderedList", labelKey: "editor.numberedList", icon: ListOrdered },
+	{ command: "formatBlock", labelKey: "editor.quote", icon: Quote, value: "blockquote" },
 ];
 
 /**
@@ -44,6 +47,7 @@ export function RichTextEditor({
 	toolbarEnd,
 	footerContent,
 }: RichTextEditorProps) {
+	const { t } = useLanguage();
 	const editorRef = useRef<HTMLDivElement | null>(null);
 	const [active, setActive] = useState<Record<string, boolean>>({});
 	const [linkOpen, setLinkOpen] = useState(false);
@@ -54,7 +58,9 @@ export function RichTextEditor({
 	// Keep the DOM in step with the value without resetting the caret on every keystroke.
 	useEffect(() => {
 		const element = editorRef.current;
-		if (element && element.innerHTML !== value) element.innerHTML = value;
+		if (!element) return;
+		const safeValue = sanitizeEditorHtml(value);
+		if (element.innerHTML !== safeValue) element.innerHTML = safeValue;
 	}, [value]);
 
 	useEffect(() => {
@@ -76,7 +82,8 @@ export function RichTextEditor({
 	}, []);
 
 	function emit() {
-		onChange(editorRef.current?.innerHTML ?? "");
+		// Export validated original resource addresses, never the blocked preview placeholders.
+		onChange(sanitizeEmailHtml(editorRef.current?.innerHTML ?? "", { forOutgoing: true }) ?? "");
 	}
 
 	function run(command: string, commandValue?: string) {
@@ -108,7 +115,11 @@ export function RichTextEditor({
 			selection.addRange(savedRange.current);
 		}
 		if (selection && selection.isCollapsed) {
-			document.execCommand("insertHTML", false, `<a href="${href.replace(/"/g, "&quot;")}">${href}</a>`);
+			// The URL field is untrusted text: build the anchor with DOM APIs so it is never parsed as HTML.
+			const anchor = document.createElement("a");
+			anchor.setAttribute("href", href);
+			anchor.textContent = href;
+			document.execCommand("insertHTML", false, anchor.outerHTML);
 		} else {
 			document.execCommand("createLink", false, href);
 		}
@@ -128,15 +139,63 @@ export function RichTextEditor({
 		}
 	}
 
+	const formatButtons = (
+		<>
+		{COMMANDS.map((item) => (
+			<Tooltip key={item.command} label={t(item.labelKey)}>
+				<button
+					type="button"
+					aria-label={t(item.labelKey)}
+					aria-pressed={!!active[item.command]}
+					disabled={disabled}
+					onMouseDown={(event) => event.preventDefault()}
+					onClick={() => run(item.command, item.value)}
+					className={cn(
+						"rounded-md p-1.5 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900",
+						active[item.command] && "bg-neutral-200 text-neutral-900",
+					)}
+				>
+					<item.icon className="h-4 w-4" />
+				</button>
+			</Tooltip>
+		))}
+		<Tooltip label={t("editor.insertLinkHint")}>
+			<button
+				type="button"
+				aria-label={t("editor.insertLink")}
+				disabled={disabled}
+				onMouseDown={(event) => event.preventDefault()}
+				onClick={openLink}
+				className="rounded-md p-1.5 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
+			>
+				<Link2 className="h-4 w-4" />
+			</button>
+		</Tooltip>
+		<Tooltip label={t("editor.clearFormatting")}>
+			<button
+				type="button"
+				aria-label={t("editor.clearFormatting")}
+				disabled={disabled}
+				onMouseDown={(event) => event.preventDefault()}
+				onClick={() => run("removeFormat")}
+				className="rounded-md p-1.5 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
+			>
+				<RemoveFormatting className="h-4 w-4" />
+			</button>
+		</Tooltip>
+		</>
+	);
+
 	return (
 		<div className={cn("flex min-h-0 flex-1 flex-col", className)}>
-			<div className="relative min-h-0 flex-1 overflow-y-auto">
+			<div className="sticky top-0 z-10 flex shrink-0 items-center gap-0.5 overflow-x-auto bg-white px-2 py-1 md:hidden">{formatButtons}</div>
+			<div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto">
 				<div
 					ref={editorRef}
 					id={id}
 					role="textbox"
 					aria-multiline="true"
-					aria-label="Message body"
+					aria-label={t("editor.messageBody")}
 					contentEditable={!disabled}
 					suppressContentEditableWarning
 					data-placeholder={placeholder}
@@ -146,98 +205,56 @@ export function RichTextEditor({
 					onKeyDown={onKeyDown}
 					className={cn(
 						"email-body max-w-none px-4 py-3 text-sm text-neutral-900 outline-none",
-						"min-h-32 empty:before:pointer-events-none empty:before:text-neutral-400 empty:before:content-[attr(data-placeholder)]",
+						"min-h-32 grow shrink-0 empty:before:pointer-events-none empty:before:text-neutral-400 empty:before:content-[attr(data-placeholder)]",
 						disabled && "cursor-not-allowed opacity-60",
 					)}
 				/>
 				{quotedHtml && (
-					<div className="px-4 pb-3">
+					<div className="shrink-0 px-4 pb-3">
 						<button
 							type="button"
 							onClick={() => setShowQuoted((open) => !open)}
 							aria-expanded={showQuoted}
+							aria-label={showQuoted ? t("editor.hideQuoted") : t("editor.showQuoted")}
 							className="rounded-full border border-neutral-200 bg-neutral-100 px-2 text-xs leading-5 text-neutral-500 hover:bg-neutral-200"
-							title={showQuoted ? "Hide quoted text" : "Show quoted text"}
+							title={showQuoted ? t("editor.hideQuoted") : t("editor.showQuoted")}
 						>
 							•••
 						</button>
 						{showQuoted && (
-							<div
-								className="email-body mt-2 max-w-none border-l-2 border-neutral-200 pl-3 text-sm text-neutral-600"
-								dangerouslySetInnerHTML={{ __html: quotedHtml }}
-							/>
+							<EmailHtmlRenderer className="mt-2" html={quotedHtml} preserveLeadingQuote />
 						)}
 					</div>
 				)}
 			</div>
 			{footerContent}
-			<div className="relative flex items-center gap-0.5 border-t border-neutral-100 px-4 py-3">
+			<div className="relative flex items-center gap-0.5 max-md:gap-2 border-t border-neutral-100 px-4 py-3 max-md:border-t-0">
 				{toolbarStart}
-				{COMMANDS.map((item) => (
-					<Tooltip key={item.command} label={item.label}>
-						<button
-							type="button"
-							aria-label={item.label}
-							aria-pressed={!!active[item.command]}
-							disabled={disabled}
-							onMouseDown={(event) => event.preventDefault()}
-							onClick={() => run(item.command, item.value)}
-							className={cn(
-								"rounded-md p-1.5 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900",
-								active[item.command] && "bg-neutral-200 text-neutral-900",
-							)}
-						>
-							<item.icon className="h-4 w-4" />
-						</button>
-					</Tooltip>
-				))}
-				<Tooltip label="Insert link (⌘K)">
-					<button
-						type="button"
-						aria-label="Insert link"
-						disabled={disabled}
-						onMouseDown={(event) => event.preventDefault()}
-						onClick={openLink}
-						className="rounded-md p-1.5 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
-					>
-						<Link2 className="h-4 w-4" />
-					</button>
-				</Tooltip>
-				<Tooltip label="Clear formatting">
-					<button
-						type="button"
-						aria-label="Clear formatting"
-						disabled={disabled}
-						onMouseDown={(event) => event.preventDefault()}
-						onClick={() => run("removeFormat")}
-						className="rounded-md p-1.5 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
-					>
-						<RemoveFormatting className="h-4 w-4" />
-					</button>
-				</Tooltip>
+				<div className="contents max-md:hidden">{formatButtons}</div>
 				{toolbarEnd}
 				{linkOpen && (
-					<form
+					<div
 						className="absolute bottom-full left-2 z-10 mb-1 flex items-center gap-2 rounded-lg border border-neutral-200 bg-white p-2 shadow-lg"
-						onSubmit={(event) => {
-							event.preventDefault();
-							applyLink();
-						}}
 					>
 						<input
 							autoFocus
 							value={linkUrl}
 							onChange={(event) => setLinkUrl(event.target.value)}
 							onKeyDown={(event) => {
+								if (event.key === "Enter") {
+									event.preventDefault();
+									applyLink();
+								}
 								if (event.key === "Escape") setLinkOpen(false);
 							}}
 							placeholder="https://example.com"
+							aria-label={t("editor.insertLink")}
 							className="h-8 w-64 rounded-md border border-neutral-200 px-2 text-sm outline-none focus:border-blue-400"
 						/>
-						<button type="submit" className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700">
-							Apply
+						<button type="button" onClick={applyLink} className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700">
+							{t("editor.apply")}
 						</button>
-					</form>
+					</div>
 				)}
 			</div>
 		</div>

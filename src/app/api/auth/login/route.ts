@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
+import { cookies } from "next/headers";
 import { getEnv } from "@/lib/cloudflare";
+import { ACCOUNTS_COOKIE, rememberLogin } from "@/lib/auth/accounts";
 import { getDb } from "@/db";
 import { users } from "@/db/schema";
 import { verifyPassword } from "@/lib/auth/password";
@@ -41,7 +43,7 @@ export async function POST(request: Request) {
 	if (!user || !verifyPassword(parsed.data.password, user.passwordHash)) {
 		return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
 	}
-	if (user.disabled) {
+	if (user.disabled || user.deletedAt) {
 		return NextResponse.json({ error: "Account disabled" }, { status: 403 });
 	}
 
@@ -69,5 +71,7 @@ export async function POST(request: Request) {
 		path: "/",
 		maxAge: 60 * 60 * 24 * 30,
 	});
+	const accountsJar = await cookies();
+	await rememberLogin(env, response, accountsJar.get(ACCOUNTS_COOKIE)?.value, token, accountsJar.get(SESSION_COOKIE)?.value);
 	return response;
 }

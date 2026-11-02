@@ -21,7 +21,8 @@ async function bundle(entry, outfile) {
 		format: "esm",
 		target: "node22",
 		logLevel: "silent",
-		alias: { "@": join(root, "src") },
+		// The DOM-only HTML pipeline is not needed here and its parser deps do not bundle for node.
+		alias: { "@/lib/email/html": join(root, "tests/stubs/email-html.mjs"), "@": join(root, "src") },
 		external: ["react", "react-dom", "next", "next/*"],
 	});
 	return import(pathToFileURL(join(outDir, outfile)).href);
@@ -29,6 +30,7 @@ async function bundle(entry, outfile) {
 
 const display = await bundle("src/lib/email/recipient-display.ts", "display.mjs");
 const thread = await bundle("src/components/messages/conversation-thread-utils.ts", "thread.mjs");
+const contacts = await bundle("src/lib/contacts/utils.ts", "contacts.mjs");
 const parties = await bundle("src/app/(dashboard)/inbox/[messageId]/utils.ts", "parties.mjs");
 const validators = await bundle("src/lib/validators.ts", "validators.mjs");
 
@@ -92,6 +94,30 @@ test("outbound To still prefers the contact name", () => {
 	assert.equal(header.toName, "Ada Lovelace");
 });
 
+test("a message's own From name beats a shared contact's learned name", () => {
+	const shared = { displayName: "LiveKit Hiring Team", source: "inbound" };
+	assert.equal(contacts.getSenderDisplayName('"PostHog Team" <no-reply@ashbyhq.com>', shared), "PostHog Team");
+	assert.equal(
+		contacts.getSenderDisplayName('"LiveKit Hiring Team" <no-reply@ashbyhq.com>', { displayName: "PostHog Team", source: "outbound" }),
+		"LiveKit Hiring Team",
+	);
+});
+
+test("a manually named contact overrides the message's From name", () => {
+	assert.equal(
+		contacts.getSenderDisplayName('"PostHog Team" <no-reply@ashbyhq.com>', { displayName: "Ashby Recruiting", source: "manual" }),
+		"Ashby Recruiting",
+	);
+});
+
+test("the learned contact name fills in when the message has no From name", () => {
+	assert.equal(
+		contacts.getSenderDisplayName("no-reply@ashbyhq.com", { displayName: "PostHog Team", source: "inbound" }),
+		"PostHog Team",
+	);
+	assert.equal(contacts.getSenderDisplayName("no-reply@ashbyhq.com", null), null);
+});
+
 test("the setting accepts only a boolean", () => {
 	assert.equal(validators.updateRecipientAddressSettingsSchema.parse({ enabled: true }).enabled, true);
 	assert.equal(validators.updateRecipientAddressSettingsSchema.parse({ enabled: false }).enabled, false);
@@ -106,6 +132,6 @@ test("migration adds the user column off by default and the journal lists it", (
 	assert.equal(db.prepare("SELECT show_full_recipient_addresses AS value FROM users").get().value, 0);
 
 	const journal = JSON.parse(readFileSync(join(root, "drizzle/migrations/meta/_journal.json"), "utf8"));
-	assert.equal(journal.entries.at(-1).tag, "0050_add_show_full_recipient_addresses");
-	assert.equal(journal.entries.at(-1).idx, 42);
+	const entry = journal.entries.find((item) => item.tag === "0050_add_show_full_recipient_addresses");
+	assert.equal(entry?.idx, 42);
 });

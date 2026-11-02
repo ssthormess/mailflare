@@ -30,6 +30,7 @@ function toLicenseStatus(settings: typeof licenseSettings.$inferSelect): License
 		plan: active ? settings.plan : "community",
 		state: settings.state,
 		features: parseFeatures(settings.features),
+		seatLimit: active && settings.plan === "pro" ? settings.seatLimit : null,
 		instanceId: settings.instanceId,
 		instanceUrl: settings.instanceUrl,
 		active,
@@ -48,6 +49,8 @@ export async function getLicenseEntitlements(_env: CloudflareEnv): Promise<Licen
 		plan: "team",
 		canCustomizeBranding: true,
 		canManageAccounts: true,
+		canShareMailboxes: true,
+		accountSeatLimit: null,
 		canForwardEmail: true,
 	};
 }
@@ -97,6 +100,7 @@ async function updateLicenseFromPaymug(
 				plan: "community",
 				state: "deactivated",
 				features: "[]",
+				seatLimit: 1,
 				validatedAt: now,
 				updatedAt: now,
 			})
@@ -127,6 +131,7 @@ async function updateLicenseFromPaymug(
 			plan,
 			state: "active",
 			features: JSON.stringify(result.features ?? []),
+			seatLimit: result.seatLimit === undefined ? settings.seatLimit : result.seatLimit,
 			activatedAt: action === "activate" ? now : settings.activatedAt,
 			validatedAt: now,
 			updatedAt: now,

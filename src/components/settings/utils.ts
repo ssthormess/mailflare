@@ -3,7 +3,6 @@ import { clearMailboxesCache } from "@/components/mailbox-provider-utils";
 import { authFetch } from "@/lib/auth/client";
 import type {
 	CurrentMailboxFormResponse,
-	ForwardingEmailResponse,
 	MailboxAutoReplyResponse,
 	MailboxAutoReplySettings,
 	MailboxSignatureResponse,
@@ -35,6 +34,7 @@ export async function updateCurrentMailboxName(id: string, displayName: string):
 
 	return {
 		id: data.mailbox.id,
+		domainId: data.mailbox.domainId,
 		localPart: data.mailbox.localPart,
 		hostname: data.mailbox.hostname,
 		displayName: data.mailbox.displayName,
@@ -52,19 +52,6 @@ export async function loadAccountSettings(): Promise<Required<AccountSettingsRes
 	}
 
 	return data.user;
-}
-
-export async function updateForwardingEmail(forwardingEmail: string): Promise<string> {
-	const res = await authFetch("/api/settings/forwarding", {
-		method: "PATCH",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({ forwardingEmail }),
-	});
-	const data = (await res.json()) as ForwardingEmailResponse;
-	if (!res.ok) {
-		throw new Error(typeof data.error === "string" ? data.error : "Failed to update forwarding email");
-	}
-	return data.forwardingEmail ?? "";
 }
 
 export async function updateMailboxSignature(mailboxId: string, signature: string): Promise<string> {
@@ -120,13 +107,13 @@ export async function updatePassword(currentPassword: string, newPassword: strin
 }
 
 /** An API key limited to the JMAP scope, for external mail apps. */
-export async function createJmapApiKey(name: string): Promise<string> {
+export async function createJmapApiKey(name: string, mailboxIds: string[]): Promise<string> {
 	const res = await authFetch("/api/api-keys", {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({ name, scopes: ["jmap"] }),
+		body: JSON.stringify({ name, scopes: ["jmap"], mailboxIds }),
 	});
-	const data = (await res.json()) as { key?: string; error?: unknown };
+	const data = (await res.json().catch(() => ({}))) as { key?: string; error?: unknown };
 	if (!res.ok || !data.key) throw new Error(typeof data.error === "string" ? data.error : "Could not create a key");
 	window.dispatchEvent(new Event("mailflare:api-keys-changed"));
 	return data.key;

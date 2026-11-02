@@ -1,9 +1,12 @@
+import type { TranslationKey } from "@/lib/i18n/types";
+
 export type SettingsNavItem = {
 	href: string;
-	label: string;
+	labelKey: TranslationKey;
+	requiresMailboxAccess?: boolean;
 };
 
 export type SettingsNavSection = {
-	label: string;
+	labelKey: TranslationKey;
 	items: SettingsNavItem[];
 };

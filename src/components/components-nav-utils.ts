@@ -5,7 +5,7 @@ export async function preloadMailboxPage(href: string, mailboxId?: string) {
 	const customFolderMatch = href.match(/^\/folders\/([^/]+)$/);
 	const smartFolderMatch = href.match(/^\/smart-folders\/([^/]+)$/);
 	const folder = (customFolderMatch || smartFolderMatch ? "inbox" : href.slice(1)) as MessageFolder;
-	const supportedFolders: MessageFolder[] = ["inbox", "starred", "snoozed", "sent", "drafts", "archived", "spam", "trash"];
+	const supportedFolders: MessageFolder[] = ["inbox", "starred", "snoozed", "sent", "scheduled", "drafts", "archived", "spam", "trash"];
 	if (!supportedFolders.includes(folder) && !smartFolderMatch) return;
 
 	const params = getMessageQueryParams(

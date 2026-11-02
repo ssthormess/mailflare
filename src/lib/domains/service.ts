@@ -40,7 +40,7 @@ export async function addDomainForUser(
 	env: CloudflareEnv,
 	userId: string,
 	hostname: string,
-	options?: { enableRouting?: boolean; enableSending?: boolean; replaceMxRecords?: boolean },
+	options?: { enableRouting?: boolean; enableSending?: boolean; replaceMxRecords?: boolean; skipDns?: boolean; receivingProvider?: "none" | "cloudflare" | "resend" | "ses"; sendingProvider?: "none" | "cloudflare" | "resend" | "ses" },
 ): Promise<{
 	domain: typeof domains.$inferSelect;
 	dns: DomainDnsView;
@@ -52,7 +52,7 @@ export async function addDomainForUser(
 	if (claimedHostname && claimedHostname.userId !== userId) {
 		throw new Error("Domain is already registered");
 	}
-	if (hasCloudflareCredentials(env)) {
+	if (!options?.skipDns && hasCloudflareCredentials(env)) {
 		const { zone } = await preflightDomain(env, normalizedHostname);
 		const [claimedZone] = await db.select({ userId: domains.userId }).from(domains).where(and(
 			eq(domains.zoneId, zone.id),
@@ -62,7 +62,19 @@ export async function addDomainForUser(
 			throw new Error("Cloudflare zone is already registered to another account");
 		}
 	}
-	const provisioned = await provisionDomainOnCloudflare(env, hostname, options);
+	// Email Routing is Cloudflare's way of receiving; another provider brings its own MX,
+	// which its setup in the domain page creates once credentials exist.
+	// A skipped-DNS domain is recorded only: nothing receives or sends until the operator picks providers.
+	const skipDns = options?.skipDns === true;
+	const receivingProvider = skipDns ? "none" : (options?.receivingProvider ?? "cloudflare");
+	// Cloudflare's sending subdomain is only provisioned when Cloudflare is the sender.
+	const requestedSending = skipDns ? "none" : (options?.sendingProvider ?? (options?.enableSending === false ? "none" : "cloudflare"));
+	const provisioned = await provisionDomainOnCloudflare(env, hostname, {
+		...options,
+		enableSending: requestedSending === "cloudflare",
+		enableRouting: receivingProvider === "cloudflare" ? (options?.enableRouting ?? true) : false,
+		replaceMxRecords: receivingProvider === "cloudflare" ? options?.replaceMxRecords : false,
+	});
 	let insertedDomainId: string | null = null;
 	let domain: typeof domains.$inferSelect;
 
@@ -78,12 +90,15 @@ export async function addDomainForUser(
 			userId,
 			hostname: provisioned.hostname,
 			zoneId: provisioned.zone.id,
-			status: provisioned.routingEnabled || provisioned.sendingEnabled ? ("active" as const) : ("pending" as const),
+			status: !skipDns && (provisioned.routingEnabled || provisioned.sendingEnabled || receivingProvider !== "cloudflare") ? ("active" as const) : ("pending" as const),
+			receivingProvider,
 			routingStatus: provisioned.routingStatus ?? null,
 			sendingSubdomainTag: provisioned.sendingSubdomainTag,
-			sendingRequested: provisioned.sendingRequested,
-			sendingEnabled: provisioned.sendingEnabled,
-			routingEnabled: provisioned.routingEnabled,
+			sendingRequested: skipDns ? false : provisioned.sendingRequested,
+			...(skipDns ? { sendingProvider: "none" as const } : options?.sendingProvider ? { sendingProvider: options.sendingProvider } : existing && existing.sendingProvider !== "none" ? {} : { sendingProvider: provisioned.sendingRequested ? ("cloudflare" as const) : ("none" as const) }),
+			sendingEnabled: skipDns ? false : provisioned.sendingEnabled,
+			routingEnabled: skipDns ? false : provisioned.routingEnabled,
+			dnsSkipped: options?.skipDns === true,
 		};
 
 		if (existing) {

@@ -9,7 +9,9 @@ import { processInboundMessage } from "@/lib/email/inbound";
 import { processAgentDraftJob } from "@/lib/agent/jobs/utils";
 import { processOutboundQueue, type OutboundQueueMessage } from "@/lib/email/send";
 import { processWebhookRetry, type WebhookRetryMessage } from "@/lib/email/webhooks";
-import { isInboundQueueMessage, isWebhookRetryMessage } from "../worker-utils";
+import { processImportJob } from "@/lib/import/jobs";
+import { applyPendingMigrations } from "@/lib/migrations/service";
+import { isImportJobMessage, isInboundQueueMessage, isWebhookRetryMessage } from "../worker-utils";
 import { createNodeRuntime } from "./runtime/env";
 import { applyMigrations } from "./runtime/migrate";
 import { startScheduler } from "./runtime/scheduler";
@@ -28,7 +30,9 @@ async function main() {
 	const { env } = runtime;
 	globalThis.__mailflareNodeEnv = env;
 
-	const migrated = await applyMigrations(runtime.database, resolve(process.env.MIGRATIONS_DIR ?? join(process.cwd(), "drizzle", "migrations")));
+	const migrated = runtime.database
+		? await applyMigrations(runtime.database, resolve(process.env.MIGRATIONS_DIR ?? join(process.cwd(), "drizzle", "migrations")))
+		: (await applyPendingMigrations(env.DB)).applied;
 	if (migrated.length) console.log(`Applied ${migrated.length} migration(s): ${migrated.join(", ")}`);
 
 	runtime.inboundQueue.setConsumer(async (body) => {
@@ -36,6 +40,7 @@ async function main() {
 	});
 	runtime.outboundQueue.setConsumer(async (body) => {
 		if (isWebhookRetryMessage(body)) await processWebhookRetry(env, body as WebhookRetryMessage);
+		else if (isImportJobMessage(body)) await processImportJob(env, body);
 		else await processOutboundQueue(env, body as OutboundQueueMessage);
 	});
 	runtime.agentQueue.setConsumer(async (body) => {

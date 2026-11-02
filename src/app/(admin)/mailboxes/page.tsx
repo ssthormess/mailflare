@@ -1,10 +1,12 @@
 "use client";
 
+import { mobilePrimaryActionClass } from "@/components/page-header-utils";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Plus, UsersRound } from "lucide-react";
+import { Plus, UsersRound } from "@/components/icons";
+import { useLanguage } from "@/components/language-provider";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -23,11 +25,13 @@ import { clearMailboxesCache } from "@/components/mailbox-provider-utils";
 import { ProgressiveAvatarImage } from "@/components/progressive-avatar-image";
 import { authFetch } from "@/lib/auth/client";
 import type { CurrentAccountResponse, Domain, MailboxOwner, MailboxesResponse } from "./types";
-import { getMailboxAddress, getMailboxName } from "./utils";
+import { getMailboxAddress, getMailboxesBase, getMailboxName } from "./utils";
 
 export default function MailboxesPage() {
+	const { t } = useLanguage();
 	const qc = useQueryClient();
 	const router = useRouter();
+	const base = getMailboxesBase(usePathname());
 	const [displayName, setDisplayName] = useState("");
 	const [localPart, setLocalPart] = useState("");
 	const [domainId, setDomainId] = useState("");
@@ -89,7 +93,7 @@ export default function MailboxesPage() {
 				}),
 			});
 			const json = (await res.json()) as { id?: string; error?: string };
-			if (!res.ok) throw new Error(json.error ?? "Failed");
+			if (!res.ok) throw new Error(json.error ?? t("mailboxes.failed"));
 			setDisplayName("");
 			setLocalPart("");
 			setDomainId("");
@@ -100,7 +104,7 @@ export default function MailboxesPage() {
 			clearMailboxesCache();
 			setCreateOpen(false);
 			qc.invalidateQueries({ queryKey: ["mailboxes"] });
-			if (mailboxType === "shared" && mailboxId) router.push(`/mailboxes/${mailboxId}`);
+			if (mailboxType === "shared" && mailboxId) router.push(`${base}/${mailboxId}`);
 			setMailboxType("personal");
 		},
 	});
@@ -113,7 +117,7 @@ export default function MailboxesPage() {
 		mailboxOwners.unshift({
 			id: account.data.user.id,
 			email: account.data.user.email ?? "",
-			name: account.data.user.name ?? account.data.user.email ?? "Current account",
+			name: account.data.user.name ?? account.data.user.email ?? t("mailboxes.currentAccount"),
 			role: "admin",
 		});
 	}
@@ -121,37 +125,37 @@ export default function MailboxesPage() {
 	return (
 		<div className="space-y-6">
 			<div className="flex items-center justify-between gap-4">
-				<h1 className="text-3xl font-medium">Mailboxes</h1>
+				<h1 className="text-2xl md:text-3xl font-medium">{t("mailboxes.title")}</h1>
 				<Dialog open={createOpen} onOpenChange={setCreateOpen}>
 					<DialogTrigger asChild>
-						<Button>
+						<Button className={mobilePrimaryActionClass}>
 							<Plus className="h-4 w-4" />
-							New mailbox
+							{t("mailboxes.new")}
 						</Button>
 					</DialogTrigger>
 					<DialogContent>
 						<DialogHeader>
-							<DialogTitle>Create mailbox</DialogTitle>
-							<DialogDescription>Add an address and provision its routing rule automatically.</DialogDescription>
+							<DialogTitle>{t("mailboxes.createTitle")}</DialogTitle>
+							<DialogDescription>{t("mailboxes.createDescription")}</DialogDescription>
 						</DialogHeader>
 						<div className="space-y-4">
 							{mailboxes.data?.canCreateShared && (
 								<div className="space-y-2">
-									<Label htmlFor="mailbox-type">Type</Label>
+									<Label htmlFor="mailbox-type">{t("mailboxes.type")}</Label>
 									<Select
 										id="mailbox-type"
 										value={mailboxType}
 										onChange={(event) => setMailboxType(event.target.value as "personal" | "shared")}
 										className="flex h-10 w-full rounded-md border border-neutral-200 bg-white px-3 text-sm shadow-sm shadow-neutral-200/50 focus-visible:border-blue-600 focus-visible:outline-none"
 									>
-										<option value="personal">Personal inbox</option>
-										<option value="shared">Shared inbox</option>
+										<option value="personal">{t("mailboxes.personalInbox")}</option>
+										<option value="shared">{t("mailboxes.sharedInbox")}</option>
 									</Select>
 								</div>
 							)}
 							{mailboxType === "personal" ? (
 							<div className="space-y-2">
-								<Label htmlFor="mailbox-owner">Account</Label>
+								<Label htmlFor="mailbox-owner">{t("mailboxes.account")}</Label>
 								<Select
 									id="mailbox-owner"
 									value={ownerUserId}
@@ -171,36 +175,36 @@ export default function MailboxesPage() {
 							</div>
 							) : (
 								<p className="rounded-2xl bg-blue-50 px-4 py-3 text-sm text-blue-800">
-									After creating the shared inbox, choose which Team accounts can access it.
+									{t("mailboxes.sharedHint")}
 								</p>
 							)}
 							<div className="space-y-2">
-								<Label htmlFor="mailbox-name">Name</Label>
+								<Label htmlFor="mailbox-name">{t("common.name")}</Label>
 								<Input
 									id="mailbox-name"
 									value={displayName}
 									onChange={(event) => setDisplayName(event.target.value)}
-									placeholder="Mailbox name"
+									placeholder={t("mailboxes.namePlaceholder")}
 								/>
 							</div>
 							<div className="space-y-2">
-								<Label htmlFor="mailbox-username">Email address</Label>
+								<Label htmlFor="mailbox-username">{t("mailboxes.emailAddress")}</Label>
 								<div className="flex h-10 overflow-hidden rounded-md border border-neutral-200 bg-white shadow-sm shadow-neutral-200/50 focus-within:border-blue-600">
 									<Input
 										id="mailbox-username"
 										value={localPart}
 										onChange={(event) => setLocalPart(event.target.value)}
-										placeholder="support"
+										placeholder={t("mailboxes.localPlaceholder")}
 										className="min-w-0 flex-1 rounded-none border-0 shadow-none focus-visible:border-0"
 									/>
-									<span className="flex items-center text-sm text-neutral-400">@</span>
+									<span className="flex items-center text-sm text-neutral-500">@</span>
 									<Select
-										aria-label="Domain"
+										aria-label={t("accounts.domain")}
 										className="min-w-0 max-w-[55%] bg-transparent px-3 text-sm text-neutral-700 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
 										value={domainId}
 										onChange={(event) => setDomainId(event.target.value)}
 									>
-										<option value="">Select domain</option>
+										<option value="">{t("accounts.selectDomain")}</option>
 										{(domains.data?.domains ?? []).map((domain) => (
 											<option key={domain.id} value={domain.id}>
 												{domain.hostname}
@@ -210,13 +214,13 @@ export default function MailboxesPage() {
 								</div>
 							</div>
 							{create.isError && (
-								<p className="text-sm text-red-600">{(create.error as Error).message}</p>
+								<p role="alert" className="text-sm text-red-600">{(create.error as Error).message}</p>
 							)}
 							<Button
 								onClick={() => create.mutate()}
 								disabled={(mailboxType === "personal" && !ownerUserId) || !displayName.trim() || !domainId || !localPart || create.isPending}
 							>
-								{create.isPending ? "Creating..." : "Create mailbox"}
+								{create.isPending ? t("accounts.creating") : t("mailboxes.createButton")}
 							</Button>
 						</div>
 					</DialogContent>
@@ -233,7 +237,7 @@ export default function MailboxesPage() {
 				)}
 				{!mailboxes.isLoading && (mailboxes.data?.mailboxes ?? []).length === 0 && (
 					<p className="rounded-2xl bg-white px-5 py-4 text-sm text-neutral-500">
-						No mailboxes yet
+						{t("mailboxes.none")}
 					</p>
 				)}
 				<List>
@@ -246,7 +250,7 @@ export default function MailboxesPage() {
 						return (
 							<ListRow key={mailbox.id} asChild>
 								<Link
-									href={`/mailboxes/${mailbox.id}`}
+									href={`${base}/${mailbox.id}`}
 									className="group px-5 py-4 transition-colors hover:bg-blue-50/40"
 								>
 									<span className="relative flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-blue-100 text-sm font-semibold text-blue-700">
@@ -254,7 +258,7 @@ export default function MailboxesPage() {
 										{mailbox.hasAvatar && (
 											<ProgressiveAvatarImage
 												src={`/api/mailboxes/${mailbox.id}/avatar`}
-												alt={`${getMailboxName(mailboxWithHostname)} profile`}
+												alt={t("mailboxes.profileAlt", { name: getMailboxName(mailboxWithHostname) })}
 												className="absolute inset-0 h-full w-full object-cover"
 											/>
 										)}
@@ -267,7 +271,7 @@ export default function MailboxesPage() {
 											{mailbox.type === "shared" && (
 												<span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
 													<UsersRound className="h-3 w-3" />
-													Shared
+													{t("mailboxes.shared")}
 												</span>
 											)}
 										</span>

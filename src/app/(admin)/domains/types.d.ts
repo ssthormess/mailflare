@@ -1,3 +1,6 @@
+export type SendingProvider = "none" | "cloudflare" | "resend" | "ses";
+export type ReceivingProvider = "none" | "cloudflare" | "resend" | "ses";
+
 export type Domain = {
 	id: string;
 	hostname: string;
@@ -5,7 +8,11 @@ export type Domain = {
 	routingEnabled: boolean;
 	sendingEnabled: boolean;
 	sendingRequested: boolean;
+	sendingProvider: SendingProvider;
+	receivingProvider: ReceivingProvider;
 	zoneId: string;
+	/** Added with DNS skipped: the Cloudflare zone is attached on first setup. */
+	dnsSkipped?: boolean;
 };
 
 export type DomainPreflight = {
@@ -64,6 +71,14 @@ export type DomainDnsCache = Record<string, { domain: Domain; dns: DomainDnsView
 export type DomainDnsDetailsProps = {
 	domain: Domain;
 	dns: DomainDnsView;
+	onSendingProviderChange?: (provider: SendingProvider) => void;
+	sendingProviderBusy?: boolean;
+	sendingProviderMessage?: string | null;
+	onReceivingProviderChange?: (provider: ReceivingProvider) => void;
+	receivingProviderBusy?: boolean;
+	receivingProviderMessage?: string | null;
+	/** Reload the DNS view after a setup that changed the zone. */
+	onDnsChanged?: () => void;
 	onSetup?: (record: DnsAuthRecord) => void;
 	setupRecord?: DnsAuthRecord | null;
 	setupMessage?: string | null;
@@ -73,6 +88,13 @@ export type DomainItemCardProps = {
 	item: Domain;
 	dns?: DnsStatusSummary;
 	dnsDetails?: DomainDnsView;
+	onSendingProviderChange?: (provider: SendingProvider) => void;
+	sendingProviderBusy?: boolean;
+	sendingProviderMessage?: string | null;
+	onReceivingProviderChange?: (provider: ReceivingProvider) => void;
+	receivingProviderBusy?: boolean;
+	receivingProviderMessage?: string | null;
+	onDnsChanged?: () => void;
 	dnsLoading?: boolean;
 	dnsError?: string | null;
 	expanded?: boolean;
