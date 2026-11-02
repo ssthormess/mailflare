@@ -8,23 +8,27 @@ on:
 permissions:
   contents: write
 
+env:
+  UPSTREAM_REPOSITORY: ${{ vars.UPSTREAM_REPOSITORY || 'hieunc229/mailflare' }}
+  CUSTOM_BRANCH: ${{ vars.CUSTOM_BRANCH || 'better-mail' }}
+
 jobs:
   sync:
     runs-on: ubuntu-latest
-    env:
-      UPSTREAM_REPOSITORY: ${{ vars.UPSTREAM_REPOSITORY || 'hieunc229/mailflare' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Merge upstream into branch
+      - name: Configure git
         run: |
-          set -euo pipefail
           git config user.name "mailflare-upstream-sync"
           git config user.email "mailflare-upstream-sync@users.noreply.github.com"
 
+      - name: Fetch upstream
+        run: |
+          set -euo pipefail
           upstream_url="https://github.com/${UPSTREAM_REPOSITORY}.git"
           if git remote get-url upstream >/dev/null 2>&1; then
             git remote set-url upstream "${upstream_url}"
@@ -32,28 +36,48 @@ jobs:
             git remote add upstream "${upstream_url}"
           fi
           git fetch --no-tags upstream
+          git fetch --no-tags origin "+refs/heads/${CUSTOM_BRANCH}:refs/remotes/origin/${CUSTOM_BRANCH}" || true
 
+      - name: Sync main from upstream (fast-forward only)
+        run: |
+          set -euo pipefail
           upstream_branch="$(git remote show upstream | sed -n 's/.*HEAD branch: //p')"
           if [ -z "${upstream_branch}" ]; then
             echo "::error::Could not resolve the default branch of ${UPSTREAM_REPOSITORY}."
             exit 1
           fi
           upstream_ref="upstream/${upstream_branch}"
+          echo "upstream_ref=${upstream_ref}" >> "${GITHUB_ENV}"
 
           if git merge-base --is-ancestor "${upstream_ref}" HEAD; then
-            echo "Already up to date."
-            exit 0
-          fi
-
-          if git merge-base --is-ancestor HEAD "${upstream_ref}"; then
-            echo "Fast-forwarding ${GITHUB_REF_NAME} to ${upstream_ref}."
+            echo "main already up to date."
+          elif git merge-base --is-ancestor HEAD "${upstream_ref}"; then
+            echo "Fast-forwarding main to ${upstream_ref}."
             git merge --ff-only "${upstream_ref}"
-          elif git merge --no-edit "${upstream_ref}"; then
-            echo "Merged ${upstream_ref} into ${GITHUB_REF_NAME}."
+            git push origin "HEAD:main"
           else
-            git merge --abort || true
-            echo "::error::${UPSTREAM_REPOSITORY} conflicts with local commits on ${GITHUB_REF_NAME}. Resolve the merge manually; no fork changes were discarded."
+            echo "::error::origin/main has diverged from upstream and cannot fast-forward. main must stay a pure upstream mirror; fix manually."
             exit 1
           fi
 
-          git push origin "HEAD:${GITHUB_REF_NAME}"
+      - name: Merge main into custom branch
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          if ! git rev-parse --verify --quiet "origin/${CUSTOM_BRANCH}" >/dev/null; then
+            echo "${CUSTOM_BRANCH} does not exist; skipping."
+            exit 0
+          fi
+          git checkout -B "${CUSTOM_BRANCH}" "origin/${CUSTOM_BRANCH}"
+          if git merge-base --is-ancestor origin/main HEAD; then
+            echo "${CUSTOM_BRANCH} already contains main."
+            exit 0
+          fi
+          if git merge --no-edit origin/main; then
+            echo "Merged main into ${CUSTOM_BRANCH}."
+            git push origin "HEAD:${CUSTOM_BRANCH}"
+          else
+            git merge --abort || true
+            echo "::error::origin/main conflicts with ${CUSTOM_BRANCH}. Resolve the merge manually; no custom changes were discarded."
+            exit 1
+          fi
