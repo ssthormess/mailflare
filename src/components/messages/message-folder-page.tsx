@@ -549,7 +549,7 @@ export function MessageFolderPage({
 							<Button
 								variant="ghost"
 								size="sm"
-								disabled={!hasMore || isLoading}
+								disabled={offset + messages.length >= total || isLoading}
 								onClick={() => setOffset(offset + limit)}
 								aria-label={t("list.nextPage")}
 							>
