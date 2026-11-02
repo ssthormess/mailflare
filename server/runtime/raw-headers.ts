@@ -39,7 +39,7 @@ export function rewriteForwardedFrom(raw: Buffer, verifiedFrom: string): Buffer 
 	if (separatorIndex < 0) throw new Error("Cannot rewrite sender on a malformed message");
 
 	const lineEnding = useCrlf ? "\r\n" : "\n";
-	const headerText = raw.subarray(0, separatorIndex).toString("utf8");
+	const headerText = Buffer.from(raw.subarray(0, separatorIndex)).toString("utf8");
 	const fromPattern = /(^|\r?\n)From:[^\r\n]*(?:(?:\r?\n)[ \t][^\r\n]*)*/i;
 	const match = headerText.match(fromPattern);
 	const originalFrom = match?.[0]

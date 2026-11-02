@@ -234,7 +234,7 @@ export const smartFolders = sqliteTable(
 			.references(() => mailboxes.id, { onDelete: "cascade" }),
 		name: text("name").notNull(),
 		domain: text("domain").notNull(),
-		createdAt: integer("created_at", { mode: "timestamp" })
+		createdAt: timestamp("created_at")
 			.notNull()
 			.$defaultFn(() => new Date()),
 	},
