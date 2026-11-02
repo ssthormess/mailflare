@@ -9,10 +9,14 @@ export type SessionUser = {
 	name: string;
 	timeZone: string | null;
 	role: UserRole;
+	isPrimaryAdmin: boolean;
 	disabled: boolean;
 	canManageMailboxes: boolean;
+	canManageDomains: boolean;
+	canManageUsers: boolean;
 	keyboardShortcutsEnabled: boolean;
 	spamProtectionEnabled: boolean;
+	showFullRecipientAddresses: boolean;
 	createdByUserId: string | null;
 	createdAt: Date;
 };

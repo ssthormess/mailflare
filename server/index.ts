@@ -46,7 +46,26 @@ async function main() {
 	const handle = app.getRequestHandler();
 	await app.prepare();
 
+	// Set TRUST_PROXY=1 when a reverse proxy terminates in front of this
+	// process; the client IP it appended to x-forwarded-for is then trusted.
+	// Direct exposure must leave it unset so only the socket IP is trusted.
+	const trustProxy = ["1", "true", "yes"].includes((process.env.TRUST_PROXY ?? "").toLowerCase());
+
 	const server = createServer((request, response) => {
+		// The only client IP that cannot be forged is the socket's. Next sees
+		// re-serialized headers, so stamp the resolved IP into a private header
+		// after removing every client-supplied forwarding header — otherwise a
+		// direct attacker could rotate them to dodge the login rate limiter.
+		const forwarded = request.headers["x-forwarded-for"];
+		const hops = (Array.isArray(forwarded) ? forwarded.at(-1) : forwarded)
+			?.split(",")
+			.map((hop) => hop.trim())
+			.filter(Boolean) ?? [];
+		const clientIp = (trustProxy ? hops.at(-1) : undefined) ?? request.socket.remoteAddress;
+		delete request.headers["cf-connecting-ip"];
+		delete request.headers["x-forwarded-for"];
+		delete request.headers["x-mailflare-client-ip"];
+		if (clientIp) request.headers["x-mailflare-client-ip"] = clientIp;
 		void handle(request, response, parse(request.url ?? "/", true));
 	});
 

@@ -32,7 +32,7 @@ export async function GET(request: Request) {
 				return new Response(object.body, {
 					headers: {
 						"Content-Type": object.httpMetadata?.contentType ?? "image/png",
-						"Cache-Control": "no-cache",
+						"Cache-Control": "public, max-age=31536000, immutable",
 						"X-Content-Type-Options": "nosniff",
 					},
 				});

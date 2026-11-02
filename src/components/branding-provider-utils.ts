@@ -7,7 +7,7 @@ export const DEFAULT_BRANDING: Branding = {
 };
 
 export async function fetchBranding(): Promise<Branding> {
-	const response = await fetch("/api/branding", { cache: "no-store" });
+	const response = await fetch("/api/branding");
 	if (!response.ok) return DEFAULT_BRANDING;
 	return (await response.json()) as Branding;
 }

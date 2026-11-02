@@ -1,10 +1,12 @@
-import { and, count, eq, inArray } from "drizzle-orm";
+import { and, count, eq, inArray, sql } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { getDb } from "@/db";
 import { messages } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/cookies";
 import { getEnv } from "@/lib/cloudflare";
+import { recipientDomainMatchSql } from "@/lib/email/recipient-domain";
+import { listSmartFolders } from "@/lib/smart-folders/service";
 import { buildMessageCounts } from "./utils";
 import { getMailboxAccessLevel, listAccessibleMailboxIds } from "@/lib/mailboxes/access";
 
@@ -58,5 +60,30 @@ export async function GET(request: Request) {
 			messages.snoozedUntil,
 		);
 
-	return NextResponse.json({ counts: buildMessageCounts(rows) });
+	const counts = buildMessageCounts(rows);
+	if (mailboxId) {
+		const folders = await listSmartFolders(db, user, mailboxId);
+		const smartFolderCounts: Record<string, { total: number; unread: number }> = {};
+		for (const folder of folders) {
+			const [row] = await db
+				.select({
+					total: count(),
+					unread: sql<number>`coalesce(sum(case when ${messages.read} = 0 then 1 else 0 end), 0)`,
+				})
+				.from(messages)
+				.where(
+					and(
+						eq(messages.mailboxId, folder.mailboxId),
+						eq(messages.direction, "inbound"),
+						recipientDomainMatchSql(folder.domain),
+					),
+				);
+			smartFolderCounts[folder.id] = {
+				total: Number(row?.total ?? 0),
+				unread: Number(row?.unread ?? 0),
+			};
+		}
+		counts.smartFolders = smartFolderCounts;
+	}
+	return NextResponse.json({ counts });
 }

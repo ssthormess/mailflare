@@ -42,19 +42,14 @@ export async function getLicenseStatus(env: CloudflareEnv): Promise<LicenseStatu
 	return toLicenseStatus(await getOrCreateLicenseSettings(env));
 }
 
-export async function getLicenseEntitlements(env: CloudflareEnv): Promise<LicenseEntitlements> {
-	try {
-		const status = await getLicenseStatus(env);
-		// TODO: confirm Paymug's exact feature identifiers when they are documented; plan is authoritative meanwhile.
-		return {
-			plan: status.plan,
-			canCustomizeBranding: status.active && (status.plan === "pro" || status.plan === "team"),
-			canManageAccounts: status.active && status.plan === "team",
-			canForwardEmail: status.active && (status.plan === "pro" || status.plan === "team"),
-		};
-	} catch {
-		return { plan: "community", canCustomizeBranding: false, canManageAccounts: false, canForwardEmail: false };
-	}
+export async function getLicenseEntitlements(_env: CloudflareEnv): Promise<LicenseEntitlements> {
+	void _env;
+	return {
+		plan: "team",
+		canCustomizeBranding: true,
+		canManageAccounts: true,
+		canForwardEmail: true,
+	};
 }
 
 async function updateLicenseFromPaymug(

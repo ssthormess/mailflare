@@ -60,6 +60,7 @@ export async function POST(request: Request) {
 		passwordHash: hashPassword(password),
 		name,
 		role: "admin",
+		isPrimaryAdmin: true,
 	});
 
 	// Tracks what the attempt changed on the Cloudflare zone so a failure can undo

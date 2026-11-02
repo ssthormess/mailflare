@@ -67,6 +67,7 @@ export function buildMessageCounts(rows: MessageCountRow[]): MessageCounts {
 	return {
 		folders,
 		customFolders,
+		smartFolders: {},
 		mailboxes: Array.from(mailboxMap.values()),
 	};
 }

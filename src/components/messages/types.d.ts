@@ -9,6 +9,7 @@ export type MessageFolderConfig = {
 	emptyText: string;
 	hrefPrefix: string;
 	folderId?: string;
+	smartFolderId?: string;
 	icon: LucideIcon;
 	headerIcons?: LucideIcon[];
 	badgeVariant?: "default" | "secondary" | "outline";

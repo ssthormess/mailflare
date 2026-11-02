@@ -6,4 +6,5 @@ export type ImapImportInput = {
 	password: string;
 	folder: string;
 	limit: number;
+	beforeUid?: number;
 };

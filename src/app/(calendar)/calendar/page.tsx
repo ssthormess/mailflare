@@ -449,7 +449,7 @@ export default function CalendarPage() {
                   event.preventDefault();
                   if (draggedEvent) void moveEvent(draggedEvent, day, event.clientY - event.currentTarget.getBoundingClientRect().top - dragOffsetPixels.current);
                 }}
-                style={{ backgroundImage: "linear-gradient(to bottom, transparent calc(100% - 1px), #f0f0f0 calc(100% - 1px))", backgroundSize: `100% ${CALENDAR_HOUR_HEIGHT}px` }}>
+                style={{ backgroundImage: "linear-gradient(to bottom, transparent calc(100% - 1px), var(--color-neutral-100) calc(100% - 1px))", backgroundSize: `100% ${CALENDAR_HOUR_HEIGHT}px` }}>
                 <button type="button" aria-label={`Add event on ${formatUserDate(day, { dateStyle: "short" })}`} onClick={(event) => openNewEvent(day, dropStartForPosition(day, event.nativeEvent.offsetY))} className="absolute inset-0 z-0 cursor-crosshair" />
                 {events.filter((event) => new Date(event.startsAt) < addDays(day, 1) && new Date(event.endsAt) > day).map((event) => {
                   const position = eventPosition(event, day);

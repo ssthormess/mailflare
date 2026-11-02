@@ -2,6 +2,9 @@ import type { NextConfig } from "next";
 import { getSecurityHeaders } from "./src/lib/security/headers";
 
 const nextConfig: NextConfig = {
+	experimental: {
+		trustHostHeader: true,
+	},
 	distDir: process.env.MAILFLARE_RUNTIME === "node" ? ".next-node" : undefined,
 	turbopack: {
 		root: import.meta.dirname,
@@ -20,6 +23,18 @@ const nextConfig: NextConfig = {
 	serverExternalPackages: ["better-sqlite3", "nodemailer", "smtp-server", "ws"],
 	async headers() {
 		return [
+			{
+				source: "/icon-:size.png",
+				headers: [
+					{ key: "Cache-Control", value: "public, max-age=86400, stale-while-revalidate=604800" },
+				],
+			},
+			{
+				source: "/favicon.ico",
+				headers: [
+					{ key: "Cache-Control", value: "public, max-age=86400, stale-while-revalidate=604800" },
+				],
+			},
 			{
 				source: "/(.*)",
 				headers: getSecurityHeaders(),

@@ -123,9 +123,11 @@ export const updateManagedAccountSchema = z.object({
 	role: z.enum(["admin", "user"]),
 	disabled: z.boolean(),
 	canManageMailboxes: z.boolean(),
+	canManageDomains: z.boolean().optional(),
+	canManageUsers: z.boolean().optional(),
 	forwardingEmail: z.preprocess(
 		(value) => (typeof value === "string" ? value.trim() : value),
-		z.string().email().or(z.literal("")).optional().transform((value) => value === undefined ? undefined : value || null),
+		z.string().email().or(z.literal("")).nullable().optional().transform((value) => value === undefined ? undefined : value || null),
 	),
 	/** Set a new password for the account; every session of that user is revoked. */
 	password: z.preprocess(
@@ -145,11 +147,20 @@ export const createAccountSchema = z.object({
 	),
 });
 
+export const createMailboxAliasSchema = z.object({
+	domainId: z.string().min(1),
+	localPart: z.string().trim().min(1).max(64).regex(/^[a-zA-Z0-9._%+-]+$/)
+		.transform((value) => value.toLowerCase()),
+});
+
 export const createUserAccountSchema = z.object({
 	username: z.string().trim().min(1).max(64).regex(/^[a-zA-Z0-9._%+-]+$/),
 	domainId: z.string().min(1),
 	password: z.string().min(8).max(128),
 	role: z.enum(["admin", "user"]).default("user"),
+	// Existing API/MCP clients retain the previous behavior when this is omitted.
+	useAllDomains: z.boolean().default(true),
+	aliases: z.array(createMailboxAliasSchema).default([]),
 });
 
 export const updateAccountSchema = z.object({
@@ -187,21 +198,16 @@ export const updateMailboxSchema = z.object({
 	useAllDomains: z.boolean().optional(),
 });
 
-export const createMailboxAliasSchema = z.object({
-	domainId: z.string().min(1),
-	localPart: z
-		.string()
-		.trim()
-		.min(1)
-		.max(64)
-		.regex(/^[a-zA-Z0-9._%+-]+$/)
-		.transform((value) => value.toLowerCase()),
-});
-
 export const folderSchema = z.object({
 	mailboxId: z.string().min(1),
 	name: z.string().trim().min(1).max(80),
 	color: z.enum(FOLDER_COLOR_VALUES).default(DEFAULT_FOLDER_COLOR),
+});
+
+export const smartFolderSchema = z.object({
+	mailboxId: z.string().min(1),
+	name: z.string().trim().min(1).max(80).optional(),
+	domain: z.string().trim().min(1).max(253),
 });
 
 export const updateProfileSchema = z.object({
@@ -228,6 +234,10 @@ export const updateShortcutsSettingsSchema = z.object({
 });
 
 export const updateSpamSettingsSchema = z.object({
+	enabled: z.boolean(),
+});
+
+export const updateRecipientAddressSettingsSchema = z.object({
 	enabled: z.boolean(),
 });
 
@@ -260,7 +270,11 @@ export const domainRoutingRuleSchema = z
 		matchValue: z.string().trim().min(1).max(500),
 		action: z.enum(["store", "forward", "reject"]),
 		mailboxId: z.string().min(1).nullish(),
-		forwardTo: z.string().trim().email().nullish(),
+		// The rule dialog submits forwardTo for every action, so blank means "not forwarding".
+		forwardTo: z.preprocess(
+			(value) => (typeof value === "string" ? value.trim() || null : value),
+			z.string().email().nullish(),
+		),
 		keepCopy: z.boolean().default(false),
 		rejectReason: z.string().trim().max(200).nullish(),
 		priority: z.number().int().min(0).max(1000).default(0),

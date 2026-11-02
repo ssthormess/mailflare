@@ -3,12 +3,19 @@ services:
     build: .
     image: mailflare:local
     restart: unless-stopped
+    init: true
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
     ports:
-      - "3000:3000"   # web app and JMAP
-      - "25:25"       # inbound SMTP (point your domain's MX here)
+      - "127.0.0.1:3000:3000"
+      - "2525:25"
+    environment:
+      NODE_OPTIONS: "--max-old-space-size=1024"
     env_file: .env.docker
     volumes:
-      - mailflare-data:/data
-
+      - /mnt/mailflare:/data
 volumes:
   mailflare-data:

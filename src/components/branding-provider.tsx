@@ -8,12 +8,12 @@ const BrandingContext = createContext<BrandingContextValue | null>(null);
 
 export function BrandingProvider({ children }: { children: React.ReactNode }) {
 	const [branding, setBranding] = useState(DEFAULT_BRANDING);
-	const [iconVersion, setIconVersion] = useState(0);
+	const [brandingLoaded, setBrandingLoaded] = useState(false);
 
 	async function refreshBranding() {
 		const nextBranding = await fetchBranding();
 		setBranding(nextBranding);
-		setIconVersion(Date.now());
+		setBrandingLoaded(true);
 		if (document.title === "Mailflare" || document.title === branding.appName) {
 			document.title = nextBranding.appName;
 		}
@@ -23,10 +23,15 @@ export function BrandingProvider({ children }: { children: React.ReactNode }) {
 		void refreshBranding();
 	}, []);
 
+	const iconUrl = branding.hasCustomIcon
+		? `/api/branding/icon?v=${branding.iconVersion ?? "0"}`
+		: "/icon-96.png";
+
 	return (
 		<BrandingContext.Provider value={{
 			...branding,
-			iconUrl: branding.hasCustomIcon ? `/api/branding/icon?v=${iconVersion}` : "/icon-96.png",
+			iconUrl,
+			brandingLoaded,
 			refreshBranding,
 		}}>
 			{children}
@@ -38,6 +43,7 @@ export function useBranding() {
 	return useContext(BrandingContext) ?? {
 		...DEFAULT_BRANDING,
 		iconUrl: "/icon-96.png",
+		brandingLoaded: false,
 		refreshBranding: async () => undefined,
 	};
 }

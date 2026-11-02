@@ -11,6 +11,7 @@ import { formatMessageIdHeader, normalizeMessageId, parseMessageIdList } from "@
 import { createAuditLog } from "@/lib/mailboxes/audit";
 import { loadMessageAttachmentContents, storeMessageAttachments, validateAttachments } from "@/lib/email/attachments";
 import type { AttachmentContent } from "@/lib/email/attachment-types";
+import { isPostalConfigured, sendViaPostal } from "@/lib/email/postal";
 import { getOutboundAttachmentMaxMb } from "@/lib/email/attachment-policy";
 import { prepareCloudflareAttachments } from "@/lib/email/cloud-attachment-utils";
 
@@ -193,7 +194,19 @@ async function deliverEmail(env: CloudflareEnv, delivery: PreparedDelivery): Pro
 		if (prepared.text !== input.text || prepared.html !== input.html) {
 			await db.update(messages).set({ textBody: prepared.text ?? null, htmlBody: prepared.html ?? null }).where(eq(messages.id, messageId));
 		}
-		const response = await env.EMAIL.send({
+		const response = isPostalConfigured(env)
+			? await sendViaPostal(env, {
+					from,
+					to,
+					cc,
+					bcc,
+					subject: input.subject,
+					html: prepared.html,
+					text: prepared.text,
+					headers,
+					attachments: prepared.attachments,
+				})
+			: await env.EMAIL.send({
 			from,
 			to,
 			...(cc.length ? { cc } : {}),

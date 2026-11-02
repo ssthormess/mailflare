@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { authFetch } from "@/lib/auth/client";
 import { Skeleton } from "@/components/ui/skeleton";
+import { MessageAttachmentDocxPreview } from "./message-attachment-docx-preview";
 import type { MessageAttachmentViewerProps } from "./message-attachment-viewer-types";
 import {
 	getAttachmentFileUrl,
@@ -83,6 +84,7 @@ export function MessageAttachmentViewer({
 							className="h-full w-full border-0 bg-white"
 						/>
 					)}
+					{previewKind === "docx" && <MessageAttachmentDocxPreview previewUrl={previewUrl} />}
 					{previewKind === "audio" && (
 						<audio src={previewUrl} controls className="w-[min(560px,90%)]" />
 					)}

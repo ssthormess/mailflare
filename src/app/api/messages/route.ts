@@ -9,7 +9,9 @@ import { getContactDisplayNameMap } from "@/lib/contacts/service";
 import { getFirstEmailAddressEntry, normalizeEmailAddress } from "@/lib/email/address";
 import { getMailboxAccessLevel, listAccessibleMailboxes } from "@/lib/mailboxes/access";
 import { tracksAccountIdentity } from "@/lib/profile/identity-utils";
+import { recipientDomainMatchSql } from "@/lib/email/recipient-domain";
 import { buildSearchConditions } from "@/lib/search/conditions";
+import { getReadableSmartFolder } from "@/lib/smart-folders/service";
 import { getRequestTimeZone } from "@/lib/time/utils";
 import { getMessageListColumns, loadConversationPage } from "./utils";
 import type { ListMessage } from "./types";
@@ -25,6 +27,7 @@ export async function GET(request: Request) {
 	const direction = url.searchParams.get("direction");
 	const mailboxId = url.searchParams.get("mailboxId");
 	const folderId = url.searchParams.get("folderId");
+	const smartFolderId = url.searchParams.get("smartFolderId");
 	const status = url.searchParams.get("status");
 	const query = url.searchParams.get("q")?.trim();
 	const title = url.searchParams.get("title")?.trim();
@@ -40,8 +43,18 @@ export async function GET(request: Request) {
 	const db = getDb(env);
 	const accessibleMailboxes = await listAccessibleMailboxes(db, user);
 	const accessibleMailboxIds = accessibleMailboxes.map((mailbox) => mailbox.id);
+	const smartFolder = smartFolderId ? await getReadableSmartFolder(db, user, smartFolderId) : null;
+	if (smartFolderId && !smartFolder) {
+		return NextResponse.json({ error: "Smart folder not found" }, { status: 404 });
+	}
 	const conditions: SQL[] = [];
-	if (mailboxId) {
+	if (smartFolder) {
+		// A smart folder is a saved recipient-domain view. Mail stays in Inbox,
+		// Archive, and Spam; this query only decides what the view lists.
+		conditions.push(eq(messages.mailboxId, smartFolder.mailboxId));
+		conditions.push(eq(messages.direction, "inbound"));
+		conditions.push(recipientDomainMatchSql(smartFolder.domain));
+	} else if (mailboxId) {
 		const access = await getMailboxAccessLevel(db, user, mailboxId);
 		if (!access?.canRead) {
 			return NextResponse.json({ error: "Mailbox not found" }, { status: 404 });
@@ -52,16 +65,16 @@ export async function GET(request: Request) {
 	} else {
 		conditions.push(eq(messages.userId, user.id));
 	}
-	if (direction === "inbound" || direction === "outbound") {
+	if (!smartFolder && (direction === "inbound" || direction === "outbound")) {
 		conditions.push(eq(messages.direction, direction));
 	}
-	if (folderId) {
+	if (!smartFolder && folderId) {
 		conditions.push(eq(messages.folderId, folderId));
 	}
-	if (status) {
+	if (!smartFolder && status) {
 		conditions.push(eq(messages.status, status));
 	}
-	if (status === "received" && !folderId) {
+	if (!smartFolder && status === "received" && !folderId) {
 		conditions.push(isNull(messages.folderId));
 		conditions.push(or(isNull(messages.snoozedUntil), lte(messages.snoozedUntil, new Date()))!);
 	}

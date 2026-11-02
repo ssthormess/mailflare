@@ -12,7 +12,10 @@ export function parseImapImportRequest(input: ImapImportRequest): ImapImportInpu
 	const username = input.username?.trim() ?? "";
 	const password = input.password ?? "";
 	const folder = input.folder?.trim() || "INBOX";
-	const limit = Math.min(Math.max(Number(input.limit ?? 25), 1), 100);
+	const limit = Math.min(Math.max(Number(input.limit ?? 25), 1), 500);
+	const beforeUid = input.beforeUid && Number.isInteger(Number(input.beforeUid)) && Number(input.beforeUid) > 0
+		? Number(input.beforeUid)
+		: undefined;
 	const destination = parseImportDestination(input.destination);
 
 	if (!input.mailboxId) throw new Error("Mailbox is required");
@@ -29,6 +32,7 @@ export function parseImapImportRequest(input: ImapImportRequest): ImapImportInpu
 		password,
 		folder,
 		limit,
+		beforeUid,
 		destination,
 	};
 }
