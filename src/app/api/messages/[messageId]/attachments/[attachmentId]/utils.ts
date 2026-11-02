@@ -10,6 +10,7 @@ export function getAttachmentContentDisposition(filename: string, inline: boolea
 	const fallback = cleaned.replace(/[^\x20-\x7e]/g, "_").replace(/["\\%]/g, "_");
 	const encoded = encodeURIComponent(cleaned).replace(/['()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
 	return `${inline ? "inline" : "attachment"}; filename="${fallback}"; filename*=UTF-8''${encoded}`;
+}
 
 export function isPreviewableAttachmentType(contentType: string): boolean {
 	return (
