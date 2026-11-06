@@ -254,6 +254,16 @@
       "statements": [
         "UPDATE `users` SET `remote_content_mode` = 'ask' WHERE `remote_content_mode` = 'allow';"
       ]
+    },
+    {
+      "name": "0004_smart_folders.sql",
+      "statements": [
+        "CREATE TABLE `smart_folders` (\n\t`id` varchar(191) NOT NULL,\n\t`user_id` varchar(191) NOT NULL,\n\t`mailbox_id` varchar(191) NOT NULL,\n\t`name` longtext NOT NULL,\n\t`domain` varchar(191) NOT NULL,\n\t`created_at` bigint NOT NULL,\n\tCONSTRAINT `smart_folders_id` PRIMARY KEY(`id`),\n\tCONSTRAINT `smart_folders_mailbox_domain_idx` UNIQUE(`mailbox_id`,`domain`)\n);",
+        "ALTER TABLE `smart_folders` ADD CONSTRAINT `smart_folders_user_id_users_id_fk` FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE cascade ON UPDATE no action;",
+        "ALTER TABLE `smart_folders` ADD CONSTRAINT `smart_folders_mailbox_id_mailboxes_id_fk` FOREIGN KEY (`mailbox_id`) REFERENCES `mailboxes`(`id`) ON DELETE cascade ON UPDATE no action;",
+        "CREATE INDEX `smart_folders_mailbox_idx` ON `smart_folders` (`mailbox_id`);",
+        "CREATE INDEX `smart_folders_user_idx` ON `smart_folders` (`user_id`);"
+      ]
     }
   ]
 }

@@ -75,7 +75,7 @@ export async function GET(request: Request) {
 			const [row] = await db
 				.select({
 					total: count(),
-					unread: sql<number>`coalesce(sum(case when ${messages.read} = 0 then 1 else 0 end), 0)`,
+					unread: sql<number>`coalesce(sum(case when ${messages.read} then 0 else 1 end), 0)`,
 				})
 				.from(messages)
 				.where(

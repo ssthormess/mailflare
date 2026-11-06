@@ -1,4 +1,6 @@
 import { sql, type SQL } from "drizzle-orm";
+import { schemaDialect } from "@/db/dialect";
+import { matchNothing } from "@/db/sql";
 import { messages } from "@/db/schema";
 import { getEmailAddressList } from "@/lib/email/address";
 
@@ -48,14 +50,23 @@ export function recipientDomainLikePatterns(domain: string): string[] {
 	return patterns;
 }
 
-/** Indexed candidate set, then an exact domain check. Both sides are required. */
+/**
+ * Indexed candidate set (SQLite's FTS5), then an exact domain check. Both sides
+ * are required. Other dialects have no messages_fts or rowid, so — like
+ * buildSearchConditions — they run the boundary-safe LIKE patterns alone.
+ */
 export function recipientDomainMatchSql(domain: string): SQL {
-	const fts = recipientDomainFtsQuery(domain);
 	const patterns = recipientDomainLikePatterns(domain);
-	if (!fts || patterns.length === 0) return sql`0`;
-	const likes = patterns.flatMap((pattern) => [
-		sql`lower(${messages.toAddr}) like ${pattern}`,
-		sql`lower(coalesce(${messages.ccAddr}, '')) like ${pattern}`,
-	]);
-	return sql`(${messages}.rowid in (select rowid from messages_fts where messages_fts match ${fts}) and (${sql.join(likes, sql` or `)}))`;
+	if (patterns.length === 0) return matchNothing;
+	const likeCondition = sql.join(
+		patterns.flatMap((pattern) => [
+			sql`lower(${messages.toAddr}) like ${pattern}`,
+			sql`lower(coalesce(${messages.ccAddr}, '')) like ${pattern}`,
+		]),
+		sql` or `,
+	);
+	if (schemaDialect() !== "sqlite") return sql`(${likeCondition})`;
+	const fts = recipientDomainFtsQuery(domain);
+	if (!fts) return sql`(${likeCondition})`;
+	return sql`(${messages}.rowid in (select rowid from messages_fts where messages_fts match ${fts}) and (${likeCondition}))`;
 }

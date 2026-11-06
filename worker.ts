@@ -48,6 +48,9 @@ export default {
 			if (!user || user.disabled) {
 				return new Response("Unauthorized", { status: 401 });
 			}
+			if (!env.REALTIME) {
+				return new Response("Realtime is not configured on this deployment", { status: 503 });
+			}
 
 			const hub = env.REALTIME.getByName(user.id);
 			const hubRequest = new Request("https://mailflare-realtime/connect", request);
